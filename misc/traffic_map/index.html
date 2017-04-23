@@ -37,6 +37,12 @@ under the License.
 
     <script type="text/javascript">
      var map;
+
+     var cacheUnknownColor = '#000000';
+     var cacheAvailableColor = '#009900';
+     var cacheOfflineColor = '#FFBB00';
+     var cacheUnavailableColor = '#FF0000';
+
      var iconSize = [25, 25];
      var cgIcon = L.icon({
        iconUrl: 'cg-grey.png',
@@ -59,6 +65,9 @@ under the License.
      var servers = {};
      var cachegroups = {};
      var cachegroupMarkers = {};
+     var cacheCachegroups = {};
+     var cachegroupCaches = {};
+     var cachePopupElems = {};
 
      function ajax(url, callback){
        var xmlhttp = new XMLHttpRequest();
@@ -82,12 +91,71 @@ under the License.
      }
 
      function getCachegroupMarkerPopup(cg) {
-       return "<b>" + cg.name + "</b><br>"
+       var div = document.createElement("div");
+
+       var b = document.createElement("b");
+       div.appendChild(b);
+
+       var txt = document.createTextNode(cg.name);
+       b.appendChild(txt);
+
+       var br = document.createElement("br");
+       div.appendChild(br);
+
+       return div
+     }
+
+     function addCache(cachegroupMarkerPopupContent, cacheName) {
+       var span = document.createElement("span");
+       span.style.color = cacheUnknownColor;
+       span.style.margin = "10px";
+       var txt = document.createTextNode(cacheName);
+       span.appendChild(txt);
+       cachegroupMarkerPopupContent.appendChild(span);
+
+       cachePopupElems[cacheName] = span;
+       return cachegroupMarkerPopupContent;
      }
 
      function addMarker(latlon, popupHtml) {
        var m0 = L.marker(latlon).addTo(map);
        m0.bindPopup(popupHtml);
+     }
+
+     function getStates() {
+       ajax("/publish/CrStates", function(srvTxt) {
+         var rawStates = JSON.parse(srvTxt);
+         var cacheStates = rawStates["caches"];
+         for(var cacheName in cacheStates) {
+           if (!cacheStates.hasOwnProperty(cacheName)) {
+             continue; // skip prototype properties
+           }
+
+           var cacheElem = cachePopupElems[cacheName];
+           if(typeof cacheElem == "undefined") {
+             console.log("ERROR: cache " + cacheName + " has no element!");
+             continue
+           }
+           var available = cacheStates[cacheName].isAvailable;
+           if(available) {
+             cacheElem.style.color = cacheAvailableColor;
+             cacheElem.style.fontWeight = 'normal';
+           } else {
+             /* console.log("cache " + cacheName + " is " + available); */
+             cacheElem.style.color = cacheUnavailableColor;
+             cacheElem.style.fontWeight = 'bold';
+           }
+         }
+       })
+     }
+
+     function hostnameFromFqdn(fqdn) {
+       var dotPos = fqdn.indexOf(".");
+       if(dotPos == -1) {
+         return fqdn;
+       }
+       var hostname = fqdn.substring(0, dotPos);
+       return hostname;
      }
 
      function getServers() {
@@ -96,6 +164,7 @@ under the License.
          servers = rawServers["response"];
          for(var i = 0; i < servers.length; i++) {
            var s = servers[i];
+           var cacheName = hostnameFromFqdn(s.fqdn);
            var cgName = s.cacheGroup;
            var marker = cachegroupMarkers[cgName];
            if(typeof marker == "undefined") {
@@ -104,10 +173,17 @@ under the License.
            }
            var popup = marker.getPopup();
            var popupContent = popup.getContent();
-           popupContent = popupContent + "<br>" + s.fqdn;
-           popup.setContent(popupContent);
-           popup.update(); // TODO upate once per popup?
+           popupContent = addCache(popupContent, cacheName);
+           popup.setContent(popupContent); // TODO necessary?
+           popup.update(); // TODO update once per popup? Necessary?
+
+           cacheCachegroups[cacheName] = cgName;
+           if(typeof cachegroupCaches[cgName] == "undefined") {
+             cachegroupCaches[cgName] = [];
+           }
+           cachegroupCaches[cgName].push(cgName);
          }
+         getStates()
        })
      }
 

@@ -26,6 +26,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/crconfig"
+	"github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/peer"
 	to "github.com/apache/incubator-trafficcontrol/traffic_ops/client"
 	"html/template"
 	"io/ioutil"
@@ -57,6 +58,7 @@ func pingMonitors(monitors []string) error {
 		if err != nil {
 			return fmt.Errorf("monitor %v error %v", monitor, err)
 		}
+		resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("monitor %v bad code %v", monitor, resp.StatusCode)
 		}
@@ -126,6 +128,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, tileUrl) })
 	http.HandleFunc("/api/1.2/servers.json", func(w http.ResponseWriter, r *http.Request) { handleServers(w, r, monitors) })
 	http.HandleFunc("/api/1.2/cachegroups.json", func(w http.ResponseWriter, r *http.Request) { handleCachegroups(w, r, monitors) })
+	http.HandleFunc("/publish/CrStates", func(w http.ResponseWriter, r *http.Request) { handleCRStates(w, r, monitors) })
 	http.HandleFunc("/cg-grey.png", makeStaticHandler(iconCgGrey, "image/png"))
 	http.HandleFunc("/cg-orange.png", makeStaticHandler(iconCgOrange, "image/png"))
 	http.HandleFunc("/cg-red.png", makeStaticHandler(iconCgRed, "image/png"))
@@ -244,6 +247,58 @@ func handleCachegroups(w http.ResponseWriter, r *http.Request, monitors []string
 	bytes, err := json.Marshal(resp)
 	if err != nil {
 		fmt.Printf("%v %v %v error getting servers: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	bytes, err = gzipIfAccepts(r, w, bytes)
+	if err != nil {
+		fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, "%s", bytes)
+}
+
+func getCRStates(monitors []string) (peer.Crstates, error) {
+	states := peer.NewCrstates()
+	client := httpClient()
+	for _, monitor := range monitors {
+		resp, err := client.Get(fmt.Sprintf("http://%v/publish/CrStates", monitor))
+		if err != nil {
+			return states, fmt.Errorf("getting %v CRStates: %v", monitor, err)
+		}
+		defer resp.Body.Close()
+
+		crs := peer.Crstates{}
+		if err := json.NewDecoder(resp.Body).Decode(&crs); err != nil {
+			return states, fmt.Errorf("unmarshalling %v CRStates: %v", monitor, err)
+		}
+
+		for name, available := range crs.Caches {
+			states.Caches[name] = available
+		}
+		for name, ds := range crs.Deliveryservice {
+			states.Deliveryservice[name] = ds
+		}
+	}
+	return states, nil
+}
+
+func handleCRStates(w http.ResponseWriter, r *http.Request, monitors []string) {
+	fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
+	crs, err := getCRStates(monitors)
+	if err != nil {
+		fmt.Printf("%v %v %v error getting crstates: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	bytes, err := json.Marshal(crs)
+	if err != nil {
+		fmt.Printf("%v %v %v error marshalling crstates: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
