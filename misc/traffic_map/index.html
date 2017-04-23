@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Traffic Control Map</title>
+    <style type="text/css">
+     html,body{width:100%;height:100%;}
+     body{margin:0;padding:0;}
+     /* body{margin:40px auto;max-width:650px;line-height:1.6;font-size:18px;color:#444;padding:0 10px;} */
+     h1,h2,h3{line-height:1.2}
+     #map0{height: 100%; width: 100%;}
+    </style>
+
+    <link rel="stylesheet" href="leaflet.css" />
+    <script src="leaflet.js"></script>
+
+    <script type="text/javascript">
+     var map;
+     var iconSize = [25, 25];
+     var cgIcon = L.icon({
+       iconUrl: 'cg-grey.png',
+       iconSize:     iconSize,
+       iconAnchor:   [0, 0],
+       popupAnchor:  [10, 2]
+     });
+     var cgErrIcon = L.icon({
+       iconUrl: 'cg-red.png',
+       iconSize:     iconSize,
+       iconAnchor:   [0, 0],
+       popupAnchor:  [-3, -76]
+     });
+     var cgWarnIcon = L.icon({
+       iconUrl: 'cg-orange.png',
+       iconSize:     iconSize,
+       iconAnchor:   [0, 0],
+       popupAnchor:  [-3, -76]
+     });
+     var servers = {};
+     var cachegroups = {};
+     var cachegroupMarkers = {};
+
+     function ajax(url, callback){
+       var xmlhttp = new XMLHttpRequest();
+       xmlhttp.onreadystatechange = function(){
+         if (xmlhttp.readyState == 4 && xmlhttp.status == 200){
+           callback(xmlhttp.responseText);
+         }
+       }
+       xmlhttp.open("GET", url, true);
+       xmlhttp.send();
+     }
+
+     function initMap() {
+       map = new L.Map('map0');
+
+       var osmUrl='{{.TileURL}}';
+       var osmAttrib='Map data © <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'; // TODO fix? I'm hesitant to make this a parameter which can be omitted, encouraging OSM TOS violations.
+       var osm = new L.TileLayer(osmUrl, {minZoom: 2, maxZoom: 16, attribution: osmAttrib});
+       map.setView(new L.LatLng(39.73, -104.98),5);
+       map.addLayer(osm);
+     }
+
+     function getCachegroupMarkerPopup(cg) {
+       return "<b>" + cg.name + "</b><br>"
+     }
+
+     function addMarker(latlon, popupHtml) {
+       var m0 = L.marker(latlon).addTo(map);
+       m0.bindPopup(popupHtml);
+     }
+
+     function getServers() {
+       ajax("/api/1.2/servers.json", function(srvTxt) {
+         var rawServers = JSON.parse(srvTxt);
+         servers = rawServers["response"];
+         for(var i = 0; i < servers.length; i++) {
+           var s = servers[i];
+           var cgName = s.cacheGroup;
+           var marker = cachegroupMarkers[cgName];
+           if(typeof marker == "undefined") {
+             console.log("ERROR no cachegroup for " + cgName);
+             continue;
+           }
+           var popup = marker.getPopup();
+           var popupContent = popup.getContent();
+           popupContent = popupContent + "<br>" + s.fqdn;
+           popup.setContent(popupContent);
+           popup.update(); // TODO upate once per popup?
+         }
+       })
+     }
+
+     function getCachegroups() {
+       ajax("/api/1.2/cachegroups.json", function(cgTxt) {
+         var rawCachegroups = JSON.parse(cgTxt);
+         cachegroups = rawCachegroups["response"];
+         for(var i = 0; i < cachegroups.length; i++) {
+           var cg = cachegroups[i];
+           var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon}).addTo(map);
+           var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
+           cachegroupMarkers[cg.name] = marker;
+         }
+         getServers(); // TODO concurrently request with cachegroups
+       })
+     }
+
+     function init() {
+       initMap();
+       getCachegroups();
+     }
+    </script>
+  </head>
+  <body onload="init()">
+    <div id="map0"></div>
+  </body>
+</html>
