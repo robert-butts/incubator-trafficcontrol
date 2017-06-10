@@ -31,6 +31,7 @@ import (
 	"html/template"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -38,12 +39,8 @@ import (
 	"unicode"
 )
 
-const Version = "0.1"
+const Version = "0.2"
 const UserAgent = "traffic_map/" + Version
-
-var monitorsStr string
-var port int
-var tileUrl string
 
 const ClientTimeout = time.Duration(10 * time.Second)
 
@@ -74,46 +71,57 @@ func httpClient() http.Client {
 	return http.Client{Timeout: ClientTimeout}
 }
 
-func pingMonitors(monitors []string) error {
-	client := httpClient()
+// func pingMonitors(monitors []string) error {
+// 	client := httpClient()
 
-	for _, monitor := range monitors {
-		resp, err := client.Get(fmt.Sprintf("http://%v/api/version", monitor))
-		if err != nil {
-			return fmt.Errorf("monitor %v error %v", monitor, err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("monitor %v bad code %v", monitor, resp.StatusCode)
-		}
-	}
-	return nil
-}
+// 	for _, monitor := range monitors {
+// 		resp, err := client.Get(fmt.Sprintf("http://%v/api/version", monitor))
+// 		if err != nil {
+// 			return fmt.Errorf("monitor %v error %v", monitor, err)
+// 		}
+// 		resp.Body.Close()
+// 		if resp.StatusCode != http.StatusOK {
+// 			return fmt.Errorf("monitor %v bad code %v", monitor, resp.StatusCode)
+// 		}
+// 	}
+// 	return nil
+// }
 
 type IndexPage struct {
 	TileURL string
 }
 
+func readFileOrDie(filename string) []byte {
+	f, err := ioutil.ReadFile(filename)
+	if err != nil {
+		fmt.Printf("Error reading %s: %v\n", filename, err)
+		os.Exit(1)
+	}
+	return f
+}
+
 func main() {
-	flag.StringVar(&monitorsStr, "monitors", "", "comma-separated list of Traffic Monitor FQDNs, recommended one from each CDN")
-	flag.StringVar(&tileUrl, "tileurl", "", "Template URL of the map tile server")
-	flag.IntVar(&port, "port", 80, "Port to serve on")
+	toURL := flag.String("to", "", "Traffic Ops URL")
+	toUser := flag.String("toUser", "", "Traffic Ops user")
+	toPass := flag.String("toPass", "", "Traffic Ops password")
+	tileUrl := flag.String("tileurl", "", "Template URL of the map tile server")
+	port := flag.Int("port", 80, "Port to serve on")
 	flag.Parse()
 
-	monitors := strings.Split(monitorsStr, ",")
-	if tileUrl == "" || len(monitors) == 0 {
-		fmt.Printf("Usage: traffic_map -monitors tm.cdn0.example.net,tm.cdn1.example.net -tileurl https://{s}.tile.example.net/{z}/{x}/{y}.png -port 80\n")
-		return
-	}
-
-	if err := pingMonitors(monitors); err != nil {
-		fmt.Printf("Error pinging monitors: %v\n", err)
+	if *tileUrl == "" || *toURL == "" || *toUser == "" {
+		fmt.Printf("Usage: traffic_map -to to.example.net -toUser bill -toPass thelizard -tileurl https://{s}.tile.example.net/{z}/{x}/{y}.png -port 80\n")
 		os.Exit(1)
 	}
 
-	// rawPage, err := ioutil.ReadFile("index.html")
-	// if err != nil {
-	// 	fmt.Printf("Error reading index.html: %v\n", err)
+	toInsecure := true
+	toClient, err := to.LoginWithAgent(*toURL, *toUser, *toPass, toInsecure, UserAgent, false, ClientTimeout)
+	if err != nil {
+		fmt.Printf("Error connecting to Traffic Ops: %v\n", err)
+		os.Exit(1)
+	}
+
+	// if err := pingMonitors(monitors); err != nil {
+	// 	fmt.Printf("Error pinging monitors: %v\n", err)
 	// 	os.Exit(1)
 	// }
 
@@ -123,44 +131,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	iconCgGrey, err := ioutil.ReadFile("cg-grey.png")
-	if err != nil {
-		fmt.Printf("Error reading cg-grey.png: %v\n", err)
-		os.Exit(1)
-	}
-	iconCgOrange, err := ioutil.ReadFile("cg-orange.png")
-	if err != nil {
-		fmt.Printf("Error reading cg-orange.png: %v\n", err)
-		os.Exit(1)
-	}
-	iconCgRed, err := ioutil.ReadFile("cg-red.png")
-	if err != nil {
-		fmt.Printf("Error reading cg-red.png: %v\n", err)
-		os.Exit(1)
-	}
-	leafletCss, err := ioutil.ReadFile("leaflet.css")
-	if err != nil {
-		fmt.Printf("Error reading leaflet.css: %v\n", err)
-		os.Exit(1)
-	}
-	leafletJs, err := ioutil.ReadFile("leaflet.js")
-	if err != nil {
-		fmt.Printf("Error reading leaflet.js: %v\n", err)
-		os.Exit(1)
+	addFileHandler := func(path, filename, contentType string) {
+		f, err := ioutil.ReadFile(filename)
+		if err != nil {
+			fmt.Printf("Error reading %s: %v\n", filename, err)
+			os.Exit(1)
+		}
+		http.HandleFunc(path, makeStaticHandler(f, contentType))
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, tileUrl) })
-	http.HandleFunc("/api/1.2/servers.json", getHandleServers(monitors))
-	http.HandleFunc("/api/1.2/cachegroups.json", getHandleCachegroups(monitors))
-	http.HandleFunc("/publish/CrStates", getHandleCRStates(monitors))
-	http.HandleFunc("/cg-grey.png", makeStaticHandler(iconCgGrey, "image/png"))
-	http.HandleFunc("/cg-orange.png", makeStaticHandler(iconCgOrange, "image/png"))
-	http.HandleFunc("/cg-red.png", makeStaticHandler(iconCgRed, "image/png"))
-	http.HandleFunc("/leaflet.css", makeStaticHandler(leafletCss, "text/css"))
-	http.HandleFunc("/leaflet.js", makeStaticHandler(leafletJs, "application/javascript"))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, *tileUrl) })
+	http.HandleFunc("/api/1.2/servers.json", getHandleServers(toClient))
+	http.HandleFunc("/api/1.2/cachegroups.json", getHandleCachegroups(toClient))
+	http.HandleFunc("/publish/CrStates", getHandleCRStates(toClient))
+	addFileHandler("/cg-grey.png", "cg-grey.png", "image/png")
+	addFileHandler("/cg-orange.png", "cg-orange.png", "image/png")
+	addFileHandler("/cg-red.png", "cg-red.png", "image/png")
+	addFileHandler("/leaflet.css", "leaflet.css", "text/css")
+	addFileHandler("/leaflet.js", "leaflet.js", "application/javascript")
+	addFileHandler("/traffic_map.js", "traffic_map.js", "application/javascript")
 
-	fmt.Printf("Serving on %v\n", port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil); err != nil {
+	fmt.Printf("Serving on %v\n", *port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
 		fmt.Printf("Error serving: %v\n", err)
 		os.Exit(1)
 	}
@@ -185,33 +177,35 @@ func handler(w http.ResponseWriter, r *http.Request, indexTempl *template.Templa
 		return
 	}
 
-	dindexTempl.Execute(w, IndexPage{TileURL: tileUrl})
+	dindexTempl.Execute(w, IndexPage{TileURL: tileURL})
 }
 
-func getCRConfigs(monitors []string) ([]crconfig.CRConfig, error) {
-	crcs := []crconfig.CRConfig{}
-	client := httpClient()
-	for _, monitor := range monitors {
-		resp, err := client.Get(fmt.Sprintf("http://%v/publish/CrConfig", monitor))
-		if err != nil {
-			return nil, fmt.Errorf("getting %v CRConfig: %v", monitor, err)
-		}
-		defer resp.Body.Close()
-
-		crc := crconfig.CRConfig{}
-		if err := json.NewDecoder(resp.Body).Decode(&crc); err != nil {
-			return nil, fmt.Errorf("unmarshalling %v CRConfig: %v", monitor, err)
-		}
-		crcs = append(crcs, crc)
+func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
+	crConfigs := []crconfig.CRConfig{}
+	cdns, err := toClient.CDNs()
+	if err != nil {
+		return nil, fmt.Errorf("getting CDNs: %v", err)
 	}
-	return crcs, nil
+
+	for _, cdn := range cdns {
+		crConfigBytes, _, err := toClient.GetCRConfig(cdn.Name)
+		if err != nil {
+			return nil, fmt.Errorf("getting %v CRConfig: %v", cdn.Name, err)
+		}
+		crConfig := crconfig.CRConfig{}
+		if err := json.Unmarshal(crConfigBytes, crConfig); err != nil {
+			return nil, fmt.Errorf("unmarshalling %v CRConfig: %v", cdn.Name, err)
+		}
+		crConfigs = append(crConfigs, crConfig)
+	}
+	return crConfigs, nil
 }
 
 type ServerResponse struct {
-	Response []crconfig.Server `json:"response"`
+	Response []to.Server `json:"response"`
 }
 
-func getHandleServers(monitors []string) http.HandlerFunc {
+func getHandleServers(toClient *to.Session) http.HandlerFunc {
 	// TODO change use one CRConfig cache for all data that comes from it
 	cache := CachedResult{}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -223,18 +217,11 @@ func getHandleServers(monitors []string) http.HandlerFunc {
 			bytes = cacheData
 			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
 		} else {
-			crcs, err := getCRConfigs(monitors)
+			servers, err := toClient.Servers()
 			if err != nil {
 				fmt.Printf("%v %v %v error getting servers: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
-			}
-
-			servers := []crconfig.Server{}
-			for _, crc := range crcs {
-				for _, server := range crc.ContentServers {
-					servers = append(servers, server)
-				}
 			}
 
 			resp := ServerResponse{Response: servers}
@@ -258,7 +245,7 @@ func getHandleServers(monitors []string) http.HandlerFunc {
 	}
 }
 
-func getHandleCachegroups(monitors []string) http.HandlerFunc {
+func getHandleCachegroups(toClient *to.Session) http.HandlerFunc {
 	// TODO abstract cache logic, and put other code in "bytesGetter" type
 	cache := CachedResult{}
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -270,23 +257,12 @@ func getHandleCachegroups(monitors []string) http.HandlerFunc {
 			bytes = cacheData
 			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
 		} else {
-			crcs, err := getCRConfigs(monitors)
+			// crcs, err := getCRConfigs(monitors)
+			cachegroups, err := toClient.CacheGroups()
 			if err != nil {
 				fmt.Printf("%v %v %v error getting cachegroups: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
-			}
-
-			cachegroups := []to.CacheGroup{}
-			for _, crc := range crcs {
-				for cgName, latlon := range crc.EdgeLocations {
-					cg := to.CacheGroup{
-						Name:      cgName,
-						Latitude:  latlon.Lat,
-						Longitude: latlon.Lon,
-					}
-					cachegroups = append(cachegroups, cg)
-				}
 			}
 
 			resp := to.CacheGroupResponse{Response: cachegroups}
@@ -311,11 +287,29 @@ func getHandleCachegroups(monitors []string) http.HandlerFunc {
 	}
 }
 
-func getCRStates(monitors []string) (peer.Crstates, error) {
+func getCRStates(toClient *to.Session) (peer.Crstates, error) {
 	states := peer.NewCrstates()
+
+	monitors, err := toClient.ServersByType(url.Values{"type": []string{"RASCAL"}})
+	if err != nil {
+		return states, fmt.Errorf("getting servers: %v", err)
+	}
+
 	client := httpClient()
+	seenCDNs := map[string]struct{}{}
 	for _, monitor := range monitors {
-		resp, err := client.Get(fmt.Sprintf("http://%v/publish/CrStates", monitor))
+		// TODO fix hardcoded statuses?
+		if monitor.Status != "ONLINE" && monitor.Status != "REPORTED" {
+			continue
+		}
+
+		if _, ok := seenCDNs[monitor.CDNName]; ok {
+			continue // only check one monitor per CDN
+		}
+		seenCDNs[monitor.CDNName] = struct{}{}
+
+		fqdn := monitor.HostName + "." + monitor.DomainName
+		resp, err := client.Get("http://" + fqdn + "/publish/CrStates")
 		if err != nil {
 			return states, fmt.Errorf("getting %v CRStates: %v", monitor, err)
 		}
@@ -336,7 +330,7 @@ func getCRStates(monitors []string) (peer.Crstates, error) {
 	return states, nil
 }
 
-func getHandleCRStates(monitors []string) http.HandlerFunc {
+func getHandleCRStates(toClient *to.Session) http.HandlerFunc {
 	cache := CachedResult{}
 	return func(w http.ResponseWriter, r *http.Request) {
 		bytes := []byte{}
@@ -347,7 +341,7 @@ func getHandleCRStates(monitors []string) http.HandlerFunc {
 			bytes = cacheData
 			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
 		} else {
-			crs, err := getCRStates(monitors)
+			crs, err := getCRStates(toClient)
 			if err != nil {
 				fmt.Printf("%v %v %v error getting crstates: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 				w.WriteHeader(http.StatusInternalServerError)
