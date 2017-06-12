@@ -31,6 +31,10 @@ var cacheCachegroups = {};
 var cachegroupCaches = {};
 var cachePopupElems = {};
 
+var cdns = {};
+var cdnServerLayerGroups = {};
+var overlayMaps = {};
+
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = function(){
@@ -119,6 +123,21 @@ function getStates() {
 //   return hostname;
 // }
 
+function addServerToMarker(server, cdnName) {
+  var cacheName = server.hostName;
+  var cgName = server.cachegroup;
+	var marker = cachegroupMarkers[cdnName][cgName];
+  if(typeof marker == "undefined") {
+    console.log("ERROR no cachegroup for " + cgName);
+    return;
+  }
+  var popup = marker.getPopup();
+  var popupContent = popup.getContent();
+  popupContent = addCache(popupContent, cacheName);
+  popup.setContent(popupContent); // TODO necessary?
+  popup.update(); // TODO update once per popup? Necessary?
+}
+
 function getServers() {
   ajax("/api/1.2/servers.json", function(srvTxt) {
     var rawServers = JSON.parse(srvTxt);
@@ -127,16 +146,11 @@ function getServers() {
       var s = servers[i];
       var cacheName = s.hostName;
       var cgName = s.cachegroup;
-      var marker = cachegroupMarkers[cgName];
-      if(typeof marker == "undefined") {
-        console.log("ERROR no cachegroup for " + cgName);
-        continue;
-      }
-      var popup = marker.getPopup();
-      var popupContent = popup.getContent();
-      popupContent = addCache(popupContent, cacheName);
-      popup.setContent(popupContent); // TODO necessary?
-      popup.update(); // TODO update once per popup? Necessary?
+			var cdnName = s.cdnName;
+			// console.log("getServers cache " + cacheName + " cdn " + cdnName + " cg " + cgName); // DEBUG
+
+			addServerToMarker(s, cdnName);
+			addServerToMarker(s, "ALL");
 
       cacheCachegroups[cacheName] = cgName;
       if(typeof cachegroupCaches[cgName] == "undefined") {
@@ -152,17 +166,40 @@ function getCachegroups() {
   ajax("/api/1.2/cachegroups.json", function(cgTxt) {
     var rawCachegroups = JSON.parse(cgTxt);
     cachegroups = rawCachegroups["response"];
-    for(var i = 0; i < cachegroups.length; i++) {
-      var cg = cachegroups[i];
-      var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon}).addTo(map);
-      var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
-      cachegroupMarkers[cg.name] = marker;
+		for(var i = 0; i < cdns.length; i++) {
+			var cdn = cdns[i];
+			// console.log("cachegroupMarkers cdn " + cdn.name); // DEBUG
+			cachegroupMarkers[cdn.name] = {};
+			for(var j = 0; j < cachegroups.length; j++) {
+				var cg = cachegroups[j];
+				var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon});
+				var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
+				cachegroupMarkers[cdn.name][cg.name] = marker;
+				// console.log("cdnServerLayerGroups " + cdn.name + " cg " + cg.name); // DEBUG
+				cdnServerLayerGroups[cdn.name].addLayer(marker)
+			}
     }
     getServers(); // TODO concurrently request with cachegroups
   })
 }
 
+function getCDNs() {
+  ajax("/api/1.2/cdns.json", function(txt) {
+    var raw = JSON.parse(txt);
+    cdns = raw["response"];
+    for(var i = 0; i < cdns.length; i++) {
+      var cdn = cdns[i];
+			// console.log("cdnServerLayerGroups adding " + cdn.name); // DEBUG
+			var lg = L.layerGroup().addTo(map);
+			cdnServerLayerGroups[cdn.name] = lg;
+			overlayMaps[cdn.name] = lg
+		}
+		L.control.layers(null, overlayMaps).addTo(map);
+		getCachegroups();
+	})
+}
+
 function init(tileUrl) {
   initMap(tileUrl);
-  getCachegroups();
+	getCDNs();
 }

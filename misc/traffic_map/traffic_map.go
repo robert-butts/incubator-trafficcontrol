@@ -142,6 +142,7 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, *tileUrl) })
 	http.HandleFunc("/api/1.2/servers.json", getHandleServers(toClient))
+	http.HandleFunc("/api/1.2/cdns.json", getHandleCDNs(toClient))
 	http.HandleFunc("/api/1.2/cachegroups.json", getHandleCachegroups(toClient))
 	http.HandleFunc("/publish/CrStates", getHandleCRStates(toClient))
 	addFileHandler("/cg-grey.png", "cg-grey.png", "image/png")
@@ -201,10 +202,6 @@ func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
 	return crConfigs, nil
 }
 
-type ServerResponse struct {
-	Response []to.Server `json:"response"`
-}
-
 func getHandleServers(toClient *to.Session) http.HandlerFunc {
 	// TODO change use one CRConfig cache for all data that comes from it
 	cache := CachedResult{}
@@ -224,10 +221,50 @@ func getHandleServers(toClient *to.Session) http.HandlerFunc {
 				return
 			}
 
-			resp := ServerResponse{Response: servers}
+			resp := to.ServerResponse{Response: servers}
 			bytes, err = json.Marshal(resp)
 			if err != nil {
 				fmt.Printf("%v %v %v error getting servers: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			cache.Set(bytes, time.Now())
+		}
+		bytes, err := gzipIfAccepts(r, w, bytes)
+		if err != nil {
+			fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, "%s", bytes)
+	}
+}
+
+func getHandleCDNs(toClient *to.Session) http.HandlerFunc {
+	// TODO change use one CRConfig cache for all data that comes from it
+	cache := CachedResult{}
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
+		bytes := []byte{}
+		cacheData, cacheTime := cache.Get()
+		age := time.Now().Sub(cacheTime)
+		if age < CacheDuration {
+			bytes = cacheData
+			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
+		} else {
+			cdns, err := toClient.CDNs()
+			if err != nil {
+				fmt.Printf("%v %v %v error getting cdns: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			resp := to.CDNResponse{Response: cdns}
+			bytes, err = json.Marshal(resp)
+			if err != nil {
+				fmt.Printf("%v %v %v error getting cdns: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
