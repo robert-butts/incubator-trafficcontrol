@@ -26,6 +26,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/crconfig"
+	dsdata "github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/deliveryservicedata"
+	tmenum "github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/enum"
 	"github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/peer"
 	to "github.com/apache/incubator-trafficcontrol/traffic_ops/client"
 	"html/template"
@@ -39,10 +41,12 @@ import (
 	"unicode"
 )
 
-const Version = "0.2"
+const Version = "0.3"
 const UserAgent = "traffic_map/" + Version
 
 const ClientTimeout = time.Duration(10 * time.Second)
+
+const JSONContentType = "application/json"
 
 // CacheDuration is the length of time to cache data results (CRStates, CRConfig, etc). If a client requests a data object, and the last request happened less than this duration in the past, the last value is returned. This is live data, so Cache-Control doesn't really apply here, but we don't want to let clients kill our servers. Cached results should return an Age header.
 const CacheDuration = time.Duration(10 * time.Second)
@@ -131,26 +135,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	addFileHandler := func(path, filename, contentType string) {
-		f, err := ioutil.ReadFile(filename)
-		if err != nil {
-			fmt.Printf("Error reading %s: %v\n", filename, err)
-			os.Exit(1)
-		}
-		http.HandleFunc(path, makeStaticHandler(f, contentType))
-	}
-
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, *tileUrl) })
 	http.HandleFunc("/api/1.2/servers.json", getHandleServers(toClient))
 	http.HandleFunc("/api/1.2/cdns.json", getHandleCDNs(toClient))
 	http.HandleFunc("/api/1.2/cachegroups.json", getHandleCachegroups(toClient))
 	http.HandleFunc("/publish/CrStates", getHandleCRStates(toClient))
-	addFileHandler("/cg-grey.png", "cg-grey.png", "image/png")
-	addFileHandler("/cg-orange.png", "cg-orange.png", "image/png")
-	addFileHandler("/cg-red.png", "cg-red.png", "image/png")
-	addFileHandler("/leaflet.css", "leaflet.css", "text/css")
-	addFileHandler("/leaflet.js", "leaflet.js", "application/javascript")
-	addFileHandler("/traffic_map.js", "traffic_map.js", "application/javascript")
+	http.HandleFunc("/publish/DsStats", getHandleDSStats(toClient))
+	http.HandleFunc("/cg-grey.png", fileHandler("cg-grey.png", "image/png"))
+	http.HandleFunc("/cg-orange.png", fileHandler("cg-orange.png", "image/png"))
+	http.HandleFunc("/cg-red.png", fileHandler("cg-red.png", "image/png"))
+	http.HandleFunc("/leaflet.css", fileHandler("leaflet.css", "text/css"))
+	http.HandleFunc("/leaflet.js", fileHandler("leaflet.js", "application/javascript"))
+	http.HandleFunc("/traffic_map.js", fileHandler("traffic_map.js", "application/javascript"))
 
 	fmt.Printf("Serving on %v\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
@@ -160,7 +156,16 @@ func main() {
 	os.Exit(0)
 }
 
-func makeStaticHandler(b []byte, contentType string) http.HandlerFunc {
+func fileHandler(filename, contentType string) http.HandlerFunc {
+	f, err := ioutil.ReadFile(filename)
+	if err != nil {
+		fmt.Printf("Error reading %s: %v\n", filename, err)
+		os.Exit(1)
+	}
+	return staticHandler(f, contentType)
+}
+
+func staticHandler(b []byte, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
 		w.Header().Set("Content-Type", contentType)
@@ -189,12 +194,12 @@ func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
 	}
 
 	for _, cdn := range cdns {
-		crConfigBytes, _, err := toClient.GetCRConfig(cdn.Name)
+		crConfigBts, _, err := toClient.GetCRConfig(cdn.Name)
 		if err != nil {
 			return nil, fmt.Errorf("getting %v CRConfig: %v", cdn.Name, err)
 		}
 		crConfig := crconfig.CRConfig{}
-		if err := json.Unmarshal(crConfigBytes, crConfig); err != nil {
+		if err := json.Unmarshal(crConfigBts, crConfig); err != nil {
 			return nil, fmt.Errorf("unmarshalling %v CRConfig: %v", cdn.Name, err)
 		}
 		crConfigs = append(crConfigs, crConfig)
@@ -204,124 +209,49 @@ func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
 
 func getHandleServers(toClient *to.Session) http.HandlerFunc {
 	// TODO change use one CRConfig cache for all data that comes from it
-	cache := CachedResult{}
-	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
-		bytes := []byte{}
-		cacheData, cacheTime := cache.Get()
-		age := time.Now().Sub(cacheTime)
-		if age < CacheDuration {
-			bytes = cacheData
-			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
-		} else {
-			servers, err := toClient.Servers()
-			if err != nil {
-				fmt.Printf("%v %v %v error getting servers: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			resp := to.ServerResponse{Response: servers}
-			bytes, err = json.Marshal(resp)
-			if err != nil {
-				fmt.Printf("%v %v %v error getting servers: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			cache.Set(bytes, time.Now())
-		}
-		bytes, err := gzipIfAccepts(r, w, bytes)
+	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+		servers, err := toClient.Servers()
 		if err != nil {
-			fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return nil, fmt.Errorf("error getting Servers: %v", err)
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, "%s", bytes)
-	}
+		resp := to.ServerResponse{Response: servers}
+		bts, err := json.Marshal(resp)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling Servers: %v", err)
+		}
+		return bts, nil
+	})
 }
 
 func getHandleCDNs(toClient *to.Session) http.HandlerFunc {
-	// TODO change use one CRConfig cache for all data that comes from it
-	cache := CachedResult{}
-	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
-		bytes := []byte{}
-		cacheData, cacheTime := cache.Get()
-		age := time.Now().Sub(cacheTime)
-		if age < CacheDuration {
-			bytes = cacheData
-			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
-		} else {
-			cdns, err := toClient.CDNs()
-			if err != nil {
-				fmt.Printf("%v %v %v error getting cdns: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			resp := to.CDNResponse{Response: cdns}
-			bytes, err = json.Marshal(resp)
-			if err != nil {
-				fmt.Printf("%v %v %v error getting cdns: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			cache.Set(bytes, time.Now())
-		}
-		bytes, err := gzipIfAccepts(r, w, bytes)
+	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+		cdns, err := toClient.CDNs()
 		if err != nil {
-			fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return nil, fmt.Errorf("error getting CDNs: %v", err)
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, "%s", bytes)
-	}
+		resp := to.CDNResponse{Response: cdns}
+		bts, err := json.Marshal(resp)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling CDNs: %v", err)
+		}
+		return bts, nil
+	})
 }
 
 func getHandleCachegroups(toClient *to.Session) http.HandlerFunc {
-	// TODO abstract cache logic, and put other code in "bytesGetter" type
-	cache := CachedResult{}
-	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
-		bytes := []byte{}
-		cacheData, cacheTime := cache.Get()
-		age := time.Now().Sub(cacheTime)
-		if age < CacheDuration {
-			bytes = cacheData
-			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
-		} else {
-			// crcs, err := getCRConfigs(monitors)
-			cachegroups, err := toClient.CacheGroups()
-			if err != nil {
-				fmt.Printf("%v %v %v error getting cachegroups: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			resp := to.CacheGroupResponse{Response: cachegroups}
-			bytes, err = json.Marshal(resp)
-			if err != nil {
-				fmt.Printf("%v %v %v error getting servers: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			cache.Set(bytes, time.Now())
-		}
-
-		bytes, err := gzipIfAccepts(r, w, bytes)
+	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+		cachegroups, err := toClient.CacheGroups()
 		if err != nil {
-			fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return nil, fmt.Errorf("error getting Cachegroups: %v", err)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, "%s", bytes)
-	}
+		resp := to.CacheGroupResponse{Response: cachegroups}
+		bts, err := json.Marshal(resp)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling Cachegroups: %v", err)
+		}
+		return bts, nil
+	})
 }
 
 func getCRStates(toClient *to.Session) (peer.Crstates, error) {
@@ -368,40 +298,106 @@ func getCRStates(toClient *to.Session) (peer.Crstates, error) {
 }
 
 func getHandleCRStates(toClient *to.Session) http.HandlerFunc {
+	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+		crStates, err := getCRStates(toClient)
+		if err != nil {
+			return nil, fmt.Errorf("error getting CRStates: %v", err)
+		}
+		bts, err := json.Marshal(crStates)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling CRStates: %v", err)
+		}
+		return bts, nil
+	})
+}
+
+func getDSStats(toClient *to.Session) (*dsdata.StatsOld, error) {
+	dsStats := &dsdata.StatsOld{
+		DeliveryService: map[tmenum.DeliveryServiceName]map[dsdata.StatName][]dsdata.StatOld{},
+	}
+
+	monitors, err := toClient.ServersByType(url.Values{"type": []string{"RASCAL"}})
+	if err != nil {
+		return dsStats, fmt.Errorf("getting servers: %v", err)
+	}
+
+	client := httpClient()
+	seenCDNs := map[string]struct{}{}
+	for _, monitor := range monitors {
+		// TODO fix hardcoded statuses?
+		if monitor.Status != "ONLINE" && monitor.Status != "REPORTED" {
+			continue
+		}
+
+		if _, ok := seenCDNs[monitor.CDNName]; ok {
+			continue // only check one monitor per CDN
+		}
+		seenCDNs[monitor.CDNName] = struct{}{}
+
+		fqdn := monitor.HostName + "." + monitor.DomainName
+		// TODO change to query string out unnecessary stats
+		resp, err := client.Get("http://" + fqdn + "/publish/DsStats")
+		if err != nil {
+			return dsStats, fmt.Errorf("getting %v DSStats: %v", monitor, err)
+		}
+		defer resp.Body.Close()
+
+		dsStatsCache := dsdata.StatsOld{}
+		if err := json.NewDecoder(resp.Body).Decode(&dsStatsCache); err != nil {
+			return dsStats, fmt.Errorf("unmarshalling %v DSStats: %v", monitor, err)
+		}
+
+		for name, stats := range dsStatsCache.DeliveryService {
+			dsStats.DeliveryService[name] = stats
+		}
+	}
+	return dsStats, nil
+}
+
+func getHandleDSStats(toClient *to.Session) http.HandlerFunc {
+	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+		s, err := getDSStats(toClient)
+		if err != nil {
+			return nil, fmt.Errorf("error getting DSStats: %v", err)
+		}
+		bts, err := json.Marshal(s)
+		if err != nil {
+			return nil, fmt.Errorf("error marshalling DSStats: %v", err)
+		}
+		return bts, nil
+	})
+}
+
+func makeCachedHandler(cacheDuration time.Duration, contentType string, get func() ([]byte, error)) http.HandlerFunc {
 	cache := CachedResult{}
 	return func(w http.ResponseWriter, r *http.Request) {
-		bytes := []byte{}
+		bts := []byte{}
+		err := error(nil)
 		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
 		cacheData, cacheTime := cache.Get()
 		age := time.Now().Sub(cacheTime)
-		if age < CacheDuration {
-			bytes = cacheData
+		if age < cacheDuration {
+			bts = cacheData
 			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
 		} else {
-			crs, err := getCRStates(toClient)
+			bts, err = get()
 			if err != nil {
-				fmt.Printf("%v %v %v error getting crstates: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+				fmt.Printf("%v %v %v error: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-
-			bytes, err = json.Marshal(crs)
-			if err != nil {
-				fmt.Printf("%v %v %v error marshalling crstates: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			cache.Set(bytes, time.Now())
+			cache.Set(bts, time.Now())
 		}
-		bytes, err := gzipIfAccepts(r, w, bytes)
+
+		bts, err = gzipIfAccepts(r, w, bts)
 		if err != nil {
 			fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, "%s", bytes)
+		w.Header().Set("Content-Type", contentType)
+		fmt.Fprintf(w, "%s", bts)
 	}
 }
 
