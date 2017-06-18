@@ -40,6 +40,9 @@ var deliveryServices = {};
 var deliveryServiceMarkers = {}; // deliveryServiceMarkers[deliveryServiceName][cachegroup]marker
 var deliveryServiceLayerGroups = {};
 
+var crconfigs = {};
+var deliveryServiceServers = {};
+
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = function(){
@@ -88,6 +91,7 @@ function addCache(cachegroupMarkerPopupContent, cacheName) {
 }
 
 function getStates() {
+  console.log("Getting Server State");
   ajax("/publish/CrStates", function(srvTxt) {
     var rawStates = JSON.parse(srvTxt);
     var cacheStates = rawStates["caches"];
@@ -111,11 +115,47 @@ function getStates() {
         cacheElem.style.fontWeight = 'bold';
       }
     }
-    getDeliveryServicesState()
+    getCRConfigs(cdns);
   })
 }
 
+function getCRConfigs(cdns) {
+  if(cdns.length == 0) {
+    getDeliveryServicesState();
+    return
+  }
+  var cdn = cdns[0];
+  if(cdn.name == 'ALL') {
+    getCRConfigs(cdns.slice(1));
+    return;
+  }
+  console.log("Getting CDN Config " + cdn.name);
+  ajax('/CRConfig-Snapshots/' + cdn.name + '/CRConfig.json', function(srvTxt) {
+    var crconfig = JSON.parse(srvTxt);
+    crconfigs[cdn.name] = crconfig;
+    addDeliveryServiceServers(crconfig);
+    getCRConfigs(cdns.slice(1));
+  })
+}
+
+function addDeliveryServiceServers(crconfig) {
+  var servers = crconfig["contentServers"];
+  for(var server in servers) {
+    if (!servers.hasOwnProperty(server)) {
+      continue; // skip prototype properties
+    }
+    deliveryServices = server["deliveryServices"];
+    for(var deliveryService in deliveryServices) {
+      if(!servers.hasOwnProperty(server)) {
+        continue; // skip prototype properties
+      }
+      deliveryServiceServers[deliveryService].push(server);
+    }
+  }
+}
+
 function getDeliveryServicesState() {
+  console.log("Getting Deliveryservice State");
   ajax("/publish/DsStats", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
     deliveryServices = raw["deliveryService"];
@@ -136,6 +176,8 @@ function getDeliveryServicesState() {
       deliveryServiceLayerGroups[deliveryService] = layerGroup;
     }
     L.control.layers(null, overlayMapsDs).addTo(map);
+
+    console.log("Done");
   })
 }
 
@@ -164,6 +206,7 @@ function addServerToMarker(server, cdnName) {
 }
 
 function getServers() {
+  console.log("Getting Servers");
   ajax("/api/1.2/servers.json", function(srvTxt) {
     var rawServers = JSON.parse(srvTxt);
     servers = rawServers["response"];
@@ -188,6 +231,7 @@ function getServers() {
 }
 
 function getCachegroups() {
+  console.log("Getting Cachegroups");
   ajax("/api/1.2/cachegroups.json", function(cgTxt) {
     var rawCachegroups = JSON.parse(cgTxt);
     cachegroups = rawCachegroups["response"];
@@ -208,6 +252,7 @@ function getCachegroups() {
 }
 
 function getCDNs() {
+  console.log("Getting CDNs");
   ajax("/api/1.2/cdns.json", function(txt) {
     var raw = JSON.parse(txt);
     cdns = raw["response"];
