@@ -6,6 +6,8 @@
   https://github.com/lvoogdt
 */
 
+/* modified to add marker text support from https://stackoverflow.com/a/25563023/292623 */
+
 /*global L*/
 
 (function (window, document, undefined) {
@@ -31,7 +33,8 @@
             extraClasses: '',
             icon: 'home',
             markerColor: 'blue',
-            iconColor: 'white'
+            iconColor: 'white',
+            html: "",
         },
 
         initialize: function (options) {
@@ -42,7 +45,7 @@
             var div = document.createElement('div'),
                 options = this.options;
 
-            if (options.icon) {
+            if (options.icon || options.html != "") {
                 div.innerHTML = this._createInner();
             }
 
@@ -76,7 +79,7 @@
                 }
             }
 
-            return "<i " + iconColorStyle + "class='" + options.extraClasses + " " + options.prefix + " " + iconClass + " " + iconSpinClass + " " + iconColorClass + "'></i>";
+            return "<i " + iconColorStyle + "class='" + options.extraClasses + " " + options.prefix + " " + iconClass + " " + iconSpinClass + " " + iconColorClass + "'>"+options.html+"</i>";
         },
 
         _setIconStyles: function (img, name) {
@@ -112,7 +115,7 @@
 
             this._setIconStyles(div, 'shadow');
             return div;
-      }
+        },
     });
         
     L.AwesomeMarkers.icon = function (options) {

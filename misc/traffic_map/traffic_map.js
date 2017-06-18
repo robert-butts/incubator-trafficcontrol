@@ -166,7 +166,14 @@ function getDeliveryServicesState() {
       var markers = [];
       for(var j = 0; j < cachegroups.length; j++) {
         var cg = cachegroups[j];
-        var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon});
+
+        // debug
+        var redMarker = L.AwesomeMarkers.icon({
+          icon: 'coffee',
+          markerColor: 'blue',
+          html: "999" // debug
+        });
+        var marker = L.marker([cg.latitude, cg.longitude], {icon: redMarker});
         var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
         deliveryServiceMarkers[deliveryService][cg.name] = marker;
         markers.push(marker)
