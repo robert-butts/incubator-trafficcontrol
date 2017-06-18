@@ -33,7 +33,12 @@ var cachePopupElems = {};
 
 var cdns = {};
 var cdnServerLayerGroups = {};
-var overlayMaps = {};
+var overlayMapsCdn = {};
+var overlayMapsDs = {};
+
+var deliveryServices = {};
+var deliveryServiceMarkers = {}; // deliveryServiceMarkers[deliveryServiceName][cachegroup]marker
+var deliveryServiceLayerGroups = {};
 
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
@@ -82,11 +87,6 @@ function addCache(cachegroupMarkerPopupContent, cacheName) {
   return cachegroupMarkerPopupContent;
 }
 
-function addMarker(latlon, popupHtml) {
-  var m0 = L.marker(latlon).addTo(map);
-  m0.bindPopup(popupHtml);
-}
-
 function getStates() {
   ajax("/publish/CrStates", function(srvTxt) {
     var rawStates = JSON.parse(srvTxt);
@@ -111,6 +111,31 @@ function getStates() {
         cacheElem.style.fontWeight = 'bold';
       }
     }
+    getDeliveryServicesState()
+  })
+}
+
+function getDeliveryServicesState() {
+  ajax("/publish/DsStats", function(srvTxt) {
+    var raw = JSON.parse(srvTxt);
+    deliveryServices = raw["deliveryService"];
+
+    for(var deliveryService in deliveryServices) {
+      deliveryServiceMarkers[deliveryService] = {};
+
+      var markers = [];
+      for(var j = 0; j < cachegroups.length; j++) {
+        var cg = cachegroups[j];
+        var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon});
+        var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
+        deliveryServiceMarkers[deliveryService][cg.name] = marker;
+        markers.push(marker)
+      }
+      var layerGroup = L.layerGroup(markers);
+      overlayMapsDs[deliveryService] = layerGroup
+      deliveryServiceLayerGroups[deliveryService] = layerGroup;
+    }
+    L.control.layers(null, overlayMapsDs).addTo(map);
   })
 }
 
@@ -166,18 +191,17 @@ function getCachegroups() {
   ajax("/api/1.2/cachegroups.json", function(cgTxt) {
     var rawCachegroups = JSON.parse(cgTxt);
     cachegroups = rawCachegroups["response"];
-		for(var i = 0; i < cdns.length; i++) {
-			var cdn = cdns[i];
-			// console.log("cachegroupMarkers cdn " + cdn.name); // DEBUG
-			cachegroupMarkers[cdn.name] = {};
-			for(var j = 0; j < cachegroups.length; j++) {
-				var cg = cachegroups[j];
-				var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon});
-				var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
-				cachegroupMarkers[cdn.name][cg.name] = marker;
-				// console.log("cdnServerLayerGroups " + cdn.name + " cg " + cg.name); // DEBUG
-				cdnServerLayerGroups[cdn.name].addLayer(marker)
-			}
+    for(var i = 0; i < cdns.length; i++) {
+      var cdn = cdns[i];
+      // console.log("cachegroupMarkers cdn " + cdn.name); // DEBUG
+      cachegroupMarkers[cdn.name] = {};
+      for(var j = 0; j < cachegroups.length; j++) {
+        var cg = cachegroups[j];
+        var marker = L.marker([cg.latitude, cg.longitude], {icon: cgIcon});
+        var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
+        cachegroupMarkers[cdn.name][cg.name] = marker;
+        cdnServerLayerGroups[cdn.name].addLayer(marker);
+      }
     }
     getServers(); // TODO concurrently request with cachegroups
   })
@@ -189,12 +213,11 @@ function getCDNs() {
     cdns = raw["response"];
     for(var i = 0; i < cdns.length; i++) {
       var cdn = cdns[i];
-			// console.log("cdnServerLayerGroups adding " + cdn.name); // DEBUG
-			var lg = L.layerGroup().addTo(map);
+			var lg = L.layerGroup();
 			cdnServerLayerGroups[cdn.name] = lg;
-			overlayMaps[cdn.name] = lg
+			overlayMapsCdn[cdn.name] = lg
 		}
-		L.control.layers(null, overlayMaps).addTo(map);
+		L.control.layers(null, overlayMapsCdn).addTo(map);
 		getCachegroups();
 	})
 }
