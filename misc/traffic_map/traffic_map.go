@@ -141,6 +141,7 @@ func main() {
 	http.HandleFunc("/api/1.2/cachegroups.json", getHandleCachegroups(toClient))
 	http.HandleFunc("/publish/CrStates", getHandleCRStates(toClient))
 	http.HandleFunc("/publish/DsStats", getHandleDSStats(toClient))
+	http.HandleFunc("/CRConfig-Snapshots/", getHandleCRConfig(toClient))
 	http.HandleFunc("/cg-grey.png", fileHandler("cg-grey.png", "image/png"))
 	http.HandleFunc("/cg-orange.png", fileHandler("cg-orange.png", "image/png"))
 	http.HandleFunc("/cg-red.png", fileHandler("cg-red.png", "image/png"))
@@ -366,6 +367,71 @@ func getHandleDSStats(toClient *to.Session) http.HandlerFunc {
 		}
 		return bts, nil
 	})
+}
+
+func getPathPart(path string, n int) string {
+	if len(path) == 0 {
+		return ""
+	}
+
+	for i := 0; i < n; i++ {
+		idx := strings.Index(path[1:], "/")
+		if idx == -1 {
+			return ""
+		}
+		path = path[idx+1:]
+	}
+	fmt.Println(path)
+	if len(path) == 0 {
+		return path
+	}
+	idx := strings.Index(path[1:], "/")
+	if idx == -1 {
+		return path[1:]
+	}
+	return path[1 : idx+1]
+}
+
+func getHandleCRConfig(toClient *to.Session) http.HandlerFunc {
+	cache := map[tmenum.CDNName]*CachedResult{}
+	return func(w http.ResponseWriter, r *http.Request) {
+		cdn := getPathPart(r.URL.Path, 1)
+		if cdn == "" {
+			fmt.Printf("%v %v %v error: invalid CDN\n", time.Now(), r.RemoteAddr, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bts := []byte{}
+		err := error(nil)
+		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
+		if _, ok := cache[tmenum.CDNName(cdn)]; !ok {
+			cache[tmenum.CDNName(cdn)] = &CachedResult{}
+		}
+		cacheData, cacheTime := cache[tmenum.CDNName(cdn)].Get()
+		age := time.Now().Sub(cacheTime)
+		if age < CacheDuration {
+			bts = cacheData
+			w.Header().Set("Age", fmt.Sprintf("%d", int(age.Seconds())))
+		} else {
+			bts, _, err = toClient.GetCRConfig(cdn)
+			if err != nil {
+				fmt.Printf("%v %v %v error: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			cache[tmenum.CDNName(cdn)].Set(bts, time.Now())
+		}
+
+		bts, err = gzipIfAccepts(r, w, bts)
+		if err != nil {
+			fmt.Printf("%v %v %v error gzipping: %v\n", time.Now(), r.RemoteAddr, r.URL.Path, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", JSONContentType)
+		fmt.Fprintf(w, "%s", bts)
+	}
 }
 
 func makeCachedHandler(cacheDuration time.Duration, contentType string, get func() ([]byte, error)) http.HandlerFunc {
