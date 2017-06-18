@@ -148,6 +148,7 @@ func main() {
 	http.HandleFunc("/leaflet.css", fileHandler("leaflet.css", "text/css"))
 	http.HandleFunc("/leaflet.js", fileHandler("leaflet.js", "application/javascript"))
 	http.HandleFunc("/traffic_map.js", fileHandler("traffic_map.js", "application/javascript"))
+	http.Handle("/font-awesome/", http.StripPrefix("/font-awesome", http.FileServer(http.Dir("./font-awesome"))))
 
 	fmt.Printf("Serving on %v\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
