@@ -42,6 +42,7 @@ var deliveryServiceLayerGroups = {};
 
 var crconfigs = {};
 var deliveryServiceServers = {};
+var deliveryServiceCachegroupServers = {};
 
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
@@ -144,12 +145,24 @@ function addDeliveryServiceServers(crconfig) {
     if (!servers.hasOwnProperty(server)) {
       continue; // skip prototype properties
     }
-    deliveryServices = server["deliveryServices"];
+    deliveryServices = servers[server].deliveryServices;
+		cachegroup = servers[server].cacheGroup
     for(var deliveryService in deliveryServices) {
-      if(!servers.hasOwnProperty(server)) {
+      if(!deliveryServices.hasOwnProperty(deliveryService)) {
         continue; // skip prototype properties
       }
+			if(!deliveryServiceServers.hasOwnProperty(deliveryService)) {
+				deliveryServiceServers[deliveryService] = [];
+			}
       deliveryServiceServers[deliveryService].push(server);
+
+      if(!deliveryServiceCachegroupServers.hasOwnProperty(deliveryService)) {
+        deliveryServiceCachegroupServers[deliveryService] = {};
+      }
+      if(!deliveryServiceCachegroupServers[deliveryService].hasOwnProperty(cachegroup)) {
+        deliveryServiceCachegroupServers[deliveryService][cachegroup] = [];
+      }
+      deliveryServiceCachegroupServers[deliveryService][cachegroup].push(server);
     }
   }
 }
@@ -167,16 +180,17 @@ function getDeliveryServicesState() {
       for(var j = 0; j < cachegroups.length; j++) {
         var cg = cachegroups[j];
 
-        // debug
-        var redMarker = L.AwesomeMarkers.icon({
-          icon: 'coffee',
-          markerColor: 'blue',
-          html: "999" // debug
-        });
-        var marker = L.marker([cg.latitude, cg.longitude], {icon: redMarker});
-        var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
-        deliveryServiceMarkers[deliveryService][cg.name] = marker;
-        markers.push(marker)
+        if(deliveryServiceCachegroupServers.hasOwnProperty(deliveryService) && deliveryServiceCachegroupServers[deliveryService].hasOwnProperty(cg.name)) {
+          var cgMarker = L.AwesomeMarkers.icon({
+            icon: 'coffee',
+            markerColor: 'blue',
+            html: deliveryServiceCachegroupServers[deliveryService][cg.name].length
+          });
+          var marker = L.marker([cg.latitude, cg.longitude], {icon: cgMarker});
+          var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
+          deliveryServiceMarkers[deliveryService][cg.name] = marker;
+          markers.push(marker)
+        }
       }
       var layerGroup = L.layerGroup(markers);
       overlayMapsDs[deliveryService] = layerGroup
@@ -200,7 +214,7 @@ function getDeliveryServicesState() {
 function addServerToMarker(server, cdnName) {
   var cacheName = server.hostName;
   var cgName = server.cachegroup;
-	var marker = cachegroupMarkers[cdnName][cgName];
+  var marker = cachegroupMarkers[cdnName][cgName];
   if(typeof marker == "undefined") {
     console.log("ERROR no cachegroup for " + cgName);
     return;
@@ -221,11 +235,10 @@ function getServers() {
       var s = servers[i];
       var cacheName = s.hostName;
       var cgName = s.cachegroup;
-			var cdnName = s.cdnName;
-			// console.log("getServers cache " + cacheName + " cdn " + cdnName + " cg " + cgName); // DEBUG
+      var cdnName = s.cdnName;
 
-			addServerToMarker(s, cdnName);
-			addServerToMarker(s, "ALL");
+      addServerToMarker(s, cdnName);
+      addServerToMarker(s, "ALL");
 
       cacheCachegroups[cacheName] = cgName;
       if(typeof cachegroupCaches[cgName] == "undefined") {
