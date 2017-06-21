@@ -320,7 +320,7 @@ function getDeliveryServicesState() {
 // normalizeTtmsRatio takes a TTMS ratio as returned by calcTtmsRatio (0.0-2.0+) and returns a number between 0.0 and 1.0 where 0.0 is bad and 1.0 is good.
 function normalizeTtmsRatio(d) {
   var oldD = d;
-  var ColorBadnessDivisor = 0.5; // debug - color value is divided by this ratio, lower means less green and more red
+  var ColorBadnessDivisor = 0.7; // debug - color value is divided by this ratio, lower means less green and more red
   d = d * ColorBadnessDivisor;
   if(d > 2.0) {
     d = 2.0;
@@ -340,66 +340,42 @@ function getColor(d) {
   } else if(d < 0.0001) {
     d = 0.0001;
   }
-  var hexColorNum = d*256;
-  var hexStr = hexColorNum.toString(16);
-  var hexStrNoDot = hexStr;
-  if(hexStr.indexOf('.') != -1) {
-    hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
+  if (d == 0.5) {
+    return "#ffff00"
   }
-  var hexStrTwo = hexStrNoDot.substring(0, 2);
-  var hexStrLengthened = hexStrTwo;
-  if(hexStrLengthened.length == 1) {
-    hexStrLengthened = "0" + hexStrLengthened;
-  }
+  if (d < 0.5) {
+    var hexStr = (d * 510).toString(16) //generate a range from 0 to 255
+    var hexStrNoDot = hexStr;
+    if(hexStr.indexOf('.') != -1) {
+      hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
+    }
 
-  var colorStr = '#'+hexStrLengthened+"cc00";
-  // console.log('colorStr ' + d + ' is ' + colorStr + ' from ' + hexStr + '->' + hexStrNoDot + '->' + hexStrTwo + '->' + hexStrLengthened)
-  return colorStr;
+    var hexStr2 = ((d * 102)+204).toString(16) //generate a range from 204 to 255
+    var hexStrNoDot2 = hexStr2;
+    if(hexStr2.indexOf('.') != -1) {
+      hexStrNoDot2 = hexStr2.substring(0, hexStr2.indexOf('.'));
+    }
+
+    //build the string
+    var str = "#" +
+      ("0" + hexStrNoDot).slice(-2) +
+      ("0" + hexStrNoDot2).slice(-2) +
+      "00";
+    return str;
+
+  } else {
+    var hexStr = (510-(d * 510)).toString(16) //generate a range from 255 to 0
+    var hexStrNoDot = hexStr;
+    if(hexStr.indexOf('.') != -1) {
+      hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
+    }
+
+    var str = "#ff" +
+      ("0" + hexStrNoDot).slice(-2) +
+      "00";
+    return str;
+  }
 }
-
-// function getColor(d) {
-//   d = 0.7;
-//   if(d > 0.9999) {
-//     d = 0.9999;
-//   } else if(d < 0.0001) {
-//     d = 0.0001;
-//   }
-//   if (d == 0.5) {
-//     return "#ffff00"
-//   }
-//   if (d < 0.5) {
-//     var hexStr = (d * 510).toString(16) //generate a range from 0 to 255
-//     var hexStrNoDot = hexStr;
-//     if(hexStr.indexOf('.') != -1) {
-//       hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
-//     }
-
-//     var hexStr2 = ((d * 102)+204).toString(16) //generate a range from 204 to 255
-//     var hexStrNoDot2 = hexStr2;
-//     if(hexStr2.indexOf('.') != -1) {
-//       hexStrNoDot2 = hexStr2.substring(0, hexStr2.indexOf('.'));
-//     }
-
-//     //build the string
-//     var str = "#" +
-//       ("0" + hexStrNoDot).slice(-2) +
-//       ("0" + hexStrNoDot2).slice(-2) +
-//       "00";
-//     return str;
-
-//   } else {
-//     var hexStr = (510-(d * 510)).toString(16) //generate a range from 255 to 0
-//     var hexStrNoDot = hexStr;
-//     if(hexStr.indexOf('.') != -1) {
-//       hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
-//     }
-
-//     var str = "#ff" +
-//       ("0" + hexStrNoDot).slice(-2) +
-//       "00";
-//     return str;
-//   }
-// }
 
 function ttmsStyle(feature) {
     return {
