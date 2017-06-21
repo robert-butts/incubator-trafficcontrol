@@ -159,6 +159,7 @@ func main() {
 	http.HandleFunc("/leaflet.groupedlayercontrol.min.js", fileHandler("leaflet.groupedlayercontrol.min.js", ContentTypeJavascript))
 	http.HandleFunc("/leaflet.groupedlayercontrol.min.js.map", fileHandler("leaflet.groupedlayercontrol.min.js.map", ContentTypeJavascript))
 	http.HandleFunc("/us-states-geojson.min.json", fileHandler("us-states-geojson.min.json", ContentTypeJSON))
+	http.HandleFunc("/zip-to-state-name.json", fileHandler("zip-to-state-name.json", ContentTypeJSON))
 
 	fmt.Printf("Serving on %v\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
