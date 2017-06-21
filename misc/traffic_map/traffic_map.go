@@ -31,6 +31,7 @@ import (
 	"github.com/apache/incubator-trafficcontrol/traffic_monitor_golang/traffic_monitor/peer"
 	to "github.com/apache/incubator-trafficcontrol/traffic_ops/client"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -182,11 +183,12 @@ func fileHandler(filename, contentType string) http.HandlerFunc {
 }
 
 func staticHandler(b []byte, contentType string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	h := func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
 		w.Header().Set("Content-Type", contentType)
-		fmt.Fprintf(w, "%s", b)
+		fmt.Fprintf(w, "%s", string(b))
 	}
+	return makeGzipHandler(h)
 }
 
 func handler(w http.ResponseWriter, r *http.Request, indexTempl *template.Template, tileURL string, influxURL string) {
@@ -509,6 +511,7 @@ func gzipIfAccepts(r *http.Request, w http.ResponseWriter, b []byte) ([]byte, er
 	if len(b) == 0 || !acceptsGzip(r) {
 		return b, nil
 	}
+
 	w.Header().Set("Content-Encoding", "gzip")
 
 	buf := bytes.Buffer{}
@@ -523,4 +526,27 @@ func gzipIfAccepts(r *http.Request, w http.ResponseWriter, b []byte) ([]byte, er
 	}
 
 	return buf.Bytes(), nil
+}
+
+type gzipResponseWriter struct {
+	io.Writer
+	http.ResponseWriter
+}
+
+func (w gzipResponseWriter) Write(b []byte) (int, error) {
+	return w.Writer.Write(b)
+}
+
+func makeGzipHandler(fn http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			fn(w, r)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w)
+		defer gz.Close()
+		gzr := gzipResponseWriter{Writer: gz, ResponseWriter: w}
+		fn(gzr, r)
+	}
 }
