@@ -46,7 +46,12 @@ const UserAgent = "traffic_map/" + Version
 
 const ClientTimeout = time.Duration(10 * time.Second)
 
-const JSONContentType = "application/json"
+const (
+	ContentTypeJSON       = "application/json"
+	ContentTypeCSS        = "text/css"
+	ContentTypePNG        = "image/png"
+	ContentTypeJavascript = "application/javascript"
+)
 
 // CacheDuration is the length of time to cache data results (CRStates, CRConfig, etc). If a client requests a data object, and the last request happened less than this duration in the past, the last value is returned. This is live data, so Cache-Control doesn't really apply here, but we don't want to let clients kill our servers. Cached results should return an Age header.
 const CacheDuration = time.Duration(10 * time.Second)
@@ -142,14 +147,18 @@ func main() {
 	http.HandleFunc("/publish/CrStates", getHandleCRStates(toClient))
 	http.HandleFunc("/publish/DsStats", getHandleDSStats(toClient))
 	http.HandleFunc("/CRConfig-Snapshots/", getHandleCRConfig(toClient))
-	http.HandleFunc("/cg-grey.png", fileHandler("cg-grey.png", "image/png"))
-	http.HandleFunc("/cg-orange.png", fileHandler("cg-orange.png", "image/png"))
-	http.HandleFunc("/cg-red.png", fileHandler("cg-red.png", "image/png"))
-	http.HandleFunc("/leaflet.css", fileHandler("leaflet.css", "text/css"))
-	http.HandleFunc("/leaflet.js", fileHandler("leaflet.js", "application/javascript"))
-	http.HandleFunc("/traffic_map.js", fileHandler("traffic_map.js", "application/javascript"))
+	http.HandleFunc("/cg-grey.png", fileHandler("cg-grey.png", ContentTypePNG))
+	http.HandleFunc("/cg-orange.png", fileHandler("cg-orange.png", ContentTypePNG))
+	http.HandleFunc("/cg-red.png", fileHandler("cg-red.png", ContentTypePNG))
+	http.HandleFunc("/leaflet.css", fileHandler("leaflet.css", ContentTypeCSS))
+	http.HandleFunc("/leaflet.js", fileHandler("leaflet.js", ContentTypeJavascript))
+	http.HandleFunc("/traffic_map.js", fileHandler("traffic_map.js", ContentTypeJavascript))
 	http.Handle("/font-awesome/", http.StripPrefix("/font-awesome", http.FileServer(http.Dir("./font-awesome"))))
 	http.Handle("/awesome-markers/", http.StripPrefix("/awesome-markers", http.FileServer(http.Dir("./awesome-markers"))))
+	http.HandleFunc("/leaflet.groupedlayercontrol.min.css", fileHandler("leaflet.groupedlayercontrol.min.css", ContentTypeCSS))
+	http.HandleFunc("/leaflet.groupedlayercontrol.min.js", fileHandler("leaflet.groupedlayercontrol.min.js", ContentTypeJavascript))
+	http.HandleFunc("/leaflet.groupedlayercontrol.min.js.map", fileHandler("leaflet.groupedlayercontrol.min.js.map", ContentTypeJavascript))
+	http.HandleFunc("/us-states-geojson.min.json", fileHandler("us-states-geojson.min.json", ContentTypeJSON))
 
 	fmt.Printf("Serving on %v\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
@@ -212,7 +221,7 @@ func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
 
 func getHandleServers(toClient *to.Session) http.HandlerFunc {
 	// TODO change use one CRConfig cache for all data that comes from it
-	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
 		servers, err := toClient.Servers()
 		if err != nil {
 			return nil, fmt.Errorf("error getting Servers: %v", err)
@@ -227,7 +236,7 @@ func getHandleServers(toClient *to.Session) http.HandlerFunc {
 }
 
 func getHandleCDNs(toClient *to.Session) http.HandlerFunc {
-	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
 		cdns, err := toClient.CDNs()
 		if err != nil {
 			return nil, fmt.Errorf("error getting CDNs: %v", err)
@@ -242,7 +251,7 @@ func getHandleCDNs(toClient *to.Session) http.HandlerFunc {
 }
 
 func getHandleCachegroups(toClient *to.Session) http.HandlerFunc {
-	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
 		cachegroups, err := toClient.CacheGroups()
 		if err != nil {
 			return nil, fmt.Errorf("error getting Cachegroups: %v", err)
@@ -301,7 +310,7 @@ func getCRStates(toClient *to.Session) (peer.Crstates, error) {
 }
 
 func getHandleCRStates(toClient *to.Session) http.HandlerFunc {
-	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
 		crStates, err := getCRStates(toClient)
 		if err != nil {
 			return nil, fmt.Errorf("error getting CRStates: %v", err)
@@ -358,7 +367,7 @@ func getDSStats(toClient *to.Session) (*dsdata.StatsOld, error) {
 }
 
 func getHandleDSStats(toClient *to.Session) http.HandlerFunc {
-	return makeCachedHandler(CacheDuration, JSONContentType, func() ([]byte, error) {
+	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
 		s, err := getDSStats(toClient)
 		if err != nil {
 			return nil, fmt.Errorf("error getting DSStats: %v", err)
@@ -431,7 +440,7 @@ func getHandleCRConfig(toClient *to.Session) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", JSONContentType)
+		w.Header().Set("Content-Type", ContentTypeJSON)
 		fmt.Fprintf(w, "%s", bts)
 	}
 }

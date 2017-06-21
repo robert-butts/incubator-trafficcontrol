@@ -44,6 +44,9 @@ var crconfigs = {};
 var deliveryServiceServers = {};
 var deliveryServiceCachegroupServers = {};
 
+var USStatesGeoJSON = {};
+var CachegroupUSStates = {};
+
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = function(){
@@ -54,6 +57,44 @@ function ajax(url, callback){
   xmlhttp.open("GET", url, true);
   xmlhttp.send();
 }
+
+// pointInGeometry returns whether the given [lat, lon] is within the given GeoJSON Geometry Polygon or MultiPolygon. Note this does not support inner rings ("holes") yet.
+function GeoJSONLatLonInFeature(lonlat, feature) {
+  if(feature.geometry.type == "Polygon") {
+    return pointInPolygon(lonlat, feature.geometry.coordinates[0]);
+  }
+  if(feature.geometry.type == "MultiPolygon") {
+    for(var i = 0; i < feature.geometry.coordinates.length; i++) {
+      if(pointInPolygon(lonlat, feature.geometry.coordinates[i][0])) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return false;
+}
+
+// pointInPolygon from https://github.com/substack/point-in-polygon licensed MIT
+// Note point is lon-lat not lat-lon, because GeoJSON is lon-lat
+function pointInPolygon(point, vs) {
+  // ray-casting algorithm based on
+  // http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html
+
+  var x = point[0], y = point[1];
+
+  var inside = false;
+  for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    var xi = vs[i][0], yi = vs[i][1];
+    var xj = vs[j][0], yj = vs[j][1];
+
+    var intersect = ((yi > y) != (yj > y))
+        && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+}
+
 
 function initMap(tileUrl) {
   map = new L.Map('map0');
@@ -173,6 +214,10 @@ function getDeliveryServicesState() {
     var raw = JSON.parse(srvTxt);
     deliveryServices = raw["deliveryService"];
 
+    var lgDsNone = L.layerGroup();
+    deliveryServiceLayerGroups["None"] = lgDsNone;
+    overlayMapsDs["None"] = lgDsNone;
+
     for(var deliveryService in deliveryServices) {
       deliveryServiceMarkers[deliveryService] = {};
 
@@ -196,8 +241,38 @@ function getDeliveryServicesState() {
       overlayMapsDs[deliveryService] = layerGroup
       deliveryServiceLayerGroups[deliveryService] = layerGroup;
     }
-    L.control.layers(null, overlayMapsDs).addTo(map);
 
+    var groupedOverlays = {
+      "CDNs": overlayMapsCdn,
+      "Delivery Services": overlayMapsDs,
+    };
+    var groupedLayersOptions = {
+      exclusiveGroups: ["CDNs", "Delivery Services"],
+    };
+    L.control.groupedLayers(null, groupedOverlays, groupedLayersOptions).addTo(map);
+
+    getRegions();
+  })
+}
+
+function getCachegroupUSStates() {
+  for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
+    var cachegroup = cachegroups[cachegroupI];
+    var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
+    for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
+      var usState = USStatesGeoJSON.features[usstateI];
+      if(GeoJSONLatLonInFeature(cachegroupLonLat, usState)) {
+        CachegroupUSStates[cachegroup.name] = usState.properties.NAME;
+      }
+    }
+  }
+}
+
+function getRegions() {
+  console.log("Getting Regions");
+  ajax("/us-states-geojson.min.json", function(srvTxt) {
+    USStatesGeoJSON = JSON.parse(srvTxt);
+    getCachegroupUSStates();
     console.log("Done");
   })
 }
@@ -276,13 +351,17 @@ function getCDNs() {
   ajax("/api/1.2/cdns.json", function(txt) {
     var raw = JSON.parse(txt);
     cdns = raw["response"];
+
+    var lgCdnNone = L.layerGroup();
+    cdnServerLayerGroups["None"] = lgCdnNone;
+    overlayMapsCdn["None"] = lgCdnNone;
+
     for(var i = 0; i < cdns.length; i++) {
       var cdn = cdns[i];
 			var lg = L.layerGroup();
 			cdnServerLayerGroups[cdn.name] = lg;
 			overlayMapsCdn[cdn.name] = lg
 		}
-		L.control.layers(null, overlayMapsCdn).addTo(map);
 		getCachegroups();
 	})
 }
