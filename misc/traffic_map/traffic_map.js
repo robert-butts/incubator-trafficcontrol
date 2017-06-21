@@ -320,6 +320,8 @@ function getDeliveryServicesState() {
 // normalizeTtmsRatio takes a TTMS ratio as returned by calcTtmsRatio (0.0-2.0+) and returns a number between 0.0 and 1.0 where 0.0 is bad and 1.0 is good.
 function normalizeTtmsRatio(d) {
   var oldD = d;
+  var ColorBadnessDivisor = 0.5; // debug - color value is divided by this ratio, lower means less green and more red
+  d = d * ColorBadnessDivisor;
   if(d > 2.0) {
     d = 2.0;
   }
@@ -327,7 +329,7 @@ function normalizeTtmsRatio(d) {
  if(d < 0.0001) {
     d = 0.0001;
   }
-	console.log("normalizeTtmsRatio got " + oldD + " returning " + d);
+  // console.log("normalizeTtmsRatio got " + oldD + " returning " + d);
   return d;
 }
 
@@ -354,6 +356,50 @@ function getColor(d) {
   // console.log('colorStr ' + d + ' is ' + colorStr + ' from ' + hexStr + '->' + hexStrNoDot + '->' + hexStrTwo + '->' + hexStrLengthened)
   return colorStr;
 }
+
+// function getColor(d) {
+//   d = 0.7;
+//   if(d > 0.9999) {
+//     d = 0.9999;
+//   } else if(d < 0.0001) {
+//     d = 0.0001;
+//   }
+//   if (d == 0.5) {
+//     return "#ffff00"
+//   }
+//   if (d < 0.5) {
+//     var hexStr = (d * 510).toString(16) //generate a range from 0 to 255
+//     var hexStrNoDot = hexStr;
+//     if(hexStr.indexOf('.') != -1) {
+//       hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
+//     }
+
+//     var hexStr2 = ((d * 102)+204).toString(16) //generate a range from 204 to 255
+//     var hexStrNoDot2 = hexStr2;
+//     if(hexStr2.indexOf('.') != -1) {
+//       hexStrNoDot2 = hexStr2.substring(0, hexStr2.indexOf('.'));
+//     }
+
+//     //build the string
+//     var str = "#" +
+//       ("0" + hexStrNoDot).slice(-2) +
+//       ("0" + hexStrNoDot2).slice(-2) +
+//       "00";
+//     return str;
+
+//   } else {
+//     var hexStr = (510-(d * 510)).toString(16) //generate a range from 255 to 0
+//     var hexStrNoDot = hexStr;
+//     if(hexStr.indexOf('.') != -1) {
+//       hexStrNoDot = hexStr.substring(0, hexStr.indexOf('.'));
+//     }
+
+//     var str = "#ff" +
+//       ("0" + hexStrNoDot).slice(-2) +
+//       "00";
+//     return str;
+//   }
+// }
 
 function ttmsStyle(feature) {
     return {
@@ -482,7 +528,7 @@ function calcStateStats() {
     if(typeof StateTtms[usStateName] == "undefined" || StateTtms[usStateName] == "") {
       console.log("State TTMS Ratio " + usStateName + " " + "NO DATA");
     }
-    console.log("State TTMS Ratio " + usStateName + " " + usState.properties.ttmsRatio + " color " + getColor(normalizeTtmsRatio(usState.properties.ttmsRatio)));
+    // console.log("State TTMS Ratio " + usStateName + " " + usState.properties.ttmsRatio + " color " + getColor(normalizeTtmsRatio(usState.properties.ttmsRatio)));
 
     var layer = L.geoJSON(usState, {style: ttmsStyle, onEachFeature: onEachFeature});
     layer.addTo(map); // immediately display "Customer Experience Ratio" map
@@ -491,9 +537,9 @@ function calcStateStats() {
   }
 
   var groupedOverlays = {
-    "CDNs": overlayMapsCdn,
+    // "CDNs": overlayMapsCdn,
     "Stats": overlayMapsStats,
-    "Delivery Services": overlayMapsDs,
+    // "Delivery Services": overlayMapsDs,
   };
   var groupedLayersOptions = {
     exclusiveGroups: ["CDNs", "Stats", "Delivery Services"],
@@ -661,5 +707,6 @@ function init(tileUrl, influxUrl) {
   // console.log("color 0.1 is " + getColor(0.1))
   InfluxURL = influxUrl;
   initMap(tileUrl);
-  getCDNs();
+  // getCDNs();
+  getRegions();
 }
