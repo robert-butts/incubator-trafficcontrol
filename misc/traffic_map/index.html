@@ -32,6 +32,7 @@ under the License.
      #map0{height: 100%; width: 100%;}
     </style>
 
+    <link rel="stylesheet" href="traffic_map.css" />
     <link rel="stylesheet" href="leaflet.css" />
     <script src="leaflet.js"></script>
     <link rel="stylesheet" href="/font-awesome/css/font-awesome.min.css">
@@ -42,7 +43,7 @@ under the License.
 
     <script src="traffic_map.js"></script>
   </head>
-  <body onload="init('{{.TileURL}}')">
+  <body onload="init('{{.TileURL}}', '{{.InfluxURL}}')">
     <div id="map0"></div>
   </body>
 </html>

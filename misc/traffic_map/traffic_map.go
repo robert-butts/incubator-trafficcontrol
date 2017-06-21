@@ -97,7 +97,8 @@ func httpClient() http.Client {
 // }
 
 type IndexPage struct {
-	TileURL string
+	TileURL   string
+	InfluxURL string
 }
 
 func readFileOrDie(filename string) []byte {
@@ -114,11 +115,12 @@ func main() {
 	toUser := flag.String("toUser", "", "Traffic Ops user")
 	toPass := flag.String("toPass", "", "Traffic Ops password")
 	tileUrl := flag.String("tileurl", "", "Template URL of the map tile server")
+	influxUrl := flag.String("influxurl", "", "InfluxDB URL")
 	port := flag.Int("port", 80, "Port to serve on")
 	flag.Parse()
 
-	if *tileUrl == "" || *toURL == "" || *toUser == "" {
-		fmt.Printf("Usage: traffic_map -to to.example.net -toUser bill -toPass thelizard -tileurl https://{s}.tile.example.net/{z}/{x}/{y}.png -port 80\n")
+	if *tileUrl == "" || *toURL == "" || *toUser == "" || *influxUrl == "" {
+		fmt.Printf("Usage: traffic_map -to to.example.net -toUser bill -toPass thelizard -tileurl https://{s}.tile.example.net/{z}/{x}/{y}.png -port 80 -influxurl = http://trafficstats.example.net\n")
 		os.Exit(1)
 	}
 
@@ -140,7 +142,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, *tileUrl) })
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { handler(w, r, indexTempl, *tileUrl, *influxUrl) })
 	http.HandleFunc("/api/1.2/servers.json", getHandleServers(toClient))
 	http.HandleFunc("/api/1.2/cdns.json", getHandleCDNs(toClient))
 	http.HandleFunc("/api/1.2/cachegroups.json", getHandleCachegroups(toClient))
@@ -153,6 +155,7 @@ func main() {
 	http.HandleFunc("/leaflet.css", fileHandler("leaflet.css", ContentTypeCSS))
 	http.HandleFunc("/leaflet.js", fileHandler("leaflet.js", ContentTypeJavascript))
 	http.HandleFunc("/traffic_map.js", fileHandler("traffic_map.js", ContentTypeJavascript))
+	http.HandleFunc("/traffic_map.css", fileHandler("traffic_map.css", ContentTypeCSS))
 	http.Handle("/font-awesome/", http.StripPrefix("/font-awesome", http.FileServer(http.Dir("./font-awesome"))))
 	http.Handle("/awesome-markers/", http.StripPrefix("/awesome-markers", http.FileServer(http.Dir("./awesome-markers"))))
 	http.HandleFunc("/leaflet.groupedlayercontrol.min.css", fileHandler("leaflet.groupedlayercontrol.min.css", ContentTypeCSS))
@@ -186,7 +189,7 @@ func staticHandler(b []byte, contentType string) http.HandlerFunc {
 	}
 }
 
-func handler(w http.ResponseWriter, r *http.Request, indexTempl *template.Template, tileURL string) {
+func handler(w http.ResponseWriter, r *http.Request, indexTempl *template.Template, tileURL string, influxURL string) {
 	fmt.Printf("%v serving %v %v\n", time.Now(), r.RemoteAddr, r.URL.Path)
 
 	dindexTempl, err := template.ParseFiles("index.html")
@@ -196,7 +199,7 @@ func handler(w http.ResponseWriter, r *http.Request, indexTempl *template.Templa
 		return
 	}
 
-	dindexTempl.Execute(w, IndexPage{TileURL: tileURL})
+	dindexTempl.Execute(w, IndexPage{TileURL: tileURL, InfluxURL: influxURL})
 }
 
 func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
