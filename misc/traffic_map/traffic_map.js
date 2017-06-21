@@ -47,6 +47,8 @@ var deliveryServiceCachegroupServers = {};
 var USStatesGeoJSON = {};
 var CachegroupUSStates = {};
 
+var ZipToStateName = {};
+
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = function(){
@@ -255,7 +257,7 @@ function getDeliveryServicesState() {
   })
 }
 
-function getCachegroupUSStates() {
+function calcCachegroupUSStates() {
   for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
     var cachegroup = cachegroups[cachegroupI];
     var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
@@ -272,7 +274,17 @@ function getRegions() {
   console.log("Getting Regions");
   ajax("/us-states-geojson.min.json", function(srvTxt) {
     USStatesGeoJSON = JSON.parse(srvTxt);
-    getCachegroupUSStates();
+    calcCachegroupUSStates();
+    getZipStates();
+    console.log("Done");
+  })
+}
+
+function getZipStates() {
+  console.log("Getting Zipcodes");
+  ajax("/zip-to-state-name.json", function(srvTxt) {
+    var raw = JSON.parse(srvTxt);
+    ZipToStateName = JSON.parse(srvTxt);
     console.log("Done");
   })
 }
