@@ -55,9 +55,9 @@ var GroupedLayers;
 
 var LatLonStats = {};
 var overlayMapsStats = {};
-var StatsTtmsStateLayers = {};
-var ZipcodeTtms = {};
-var StateTtms = {};
+// var StatsTtmsStateLayers = {};
+var DeliveryserviceZipcodeTtms = {};
+var DeliveryserviceStateTtms = {};
 
 var info; // info pane
 
@@ -157,9 +157,15 @@ function createInfo() {
 
   // method that we will use to update the control based on feature properties passed
   info.update = function (props) {
-     this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' +  (props ?
-																																'<b>' + props.NAME + '</b><br />' + props.ttmsRatio.toFixed(2) + ''
-																																: 'Hover over a state');
+    if(props) {
+      if(props.ttmsRatio > 0.0) {
+        this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + props.NAME + '</b><br />' + props.ttmsRatio.toFixed(2) + '';
+      } else {
+        this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + props.NAME + '</b><br />' + '<i>no recent customers</i>' + '';
+      }
+    } else {
+     this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + 'Hover over a state';
+    }
   };
 
   info.addTo(map);
@@ -174,6 +180,7 @@ function initMap(tileUrl) {
   map.addLayer(osm);
   createLegend();
   createInfo();
+	map.on('layeradd', onLayerAdd);
 }
 
 function getCachegroupMarkerPopup(cg) {
@@ -258,12 +265,12 @@ function addDeliveryServiceServers(crconfig) {
       continue; // skip prototype properties
     }
     deliveryServices = servers[server].deliveryServices;
-		cachegroup = servers[server].cacheGroup
+    cachegroup = servers[server].cacheGroup
     for(var deliveryService in deliveryServices) {
       if(!deliveryServices.hasOwnProperty(deliveryService)) {
         continue; // skip prototype properties
       }
-			if(!deliveryServiceServers.hasOwnProperty(deliveryService)) {
+      if(!deliveryServiceServers.hasOwnProperty(deliveryService)) {
 				deliveryServiceServers[deliveryService] = [];
 			}
       deliveryServiceServers[deliveryService].push(server);
@@ -319,9 +326,15 @@ function getDeliveryServicesState() {
 
 // normalizeTtmsRatio takes a TTMS ratio as returned by calcTtmsRatio (0.0-2.0+) and returns a number between 0.0 and 1.0 where 0.0 is bad and 1.0 is good.
 function normalizeTtmsRatio(d) {
+  if(d == -1) {
+    return d
+  }
   var oldD = d;
-  var ColorBadnessDivisor = 0.7; // debug - color value is divided by this ratio, lower means less green and more red
+
+  var ColorBadnessDivisor = 0.1; // debug - color value is divided by this ratio, lower means less green and more red
+
   d = d * ColorBadnessDivisor;
+  var badnessChange = d;
   if(d > 2.0) {
     d = 2.0;
   }
@@ -329,12 +342,16 @@ function normalizeTtmsRatio(d) {
  if(d < 0.0001) {
     d = 0.0001;
   }
-  // console.log("normalizeTtmsRatio got " + oldD + " returning " + d);
+  // console.log("normalizeTtmsRatio got " + oldD + " adjusted to " + badnessChange + " returning " + d);
   return d;
 }
 
 // 0.0 < d < 1.0
 function getColor(d) {
+  if(d == -1) {
+    return "#9999aa" // missing data => blue
+  }
+
   if(d > 0.9999) {
     d = 0.9999;
   } else if(d < 0.0001) {
@@ -392,7 +409,7 @@ var AverageFragmentLengthMS = 2000;
 // calcTtmsRatio returns a number between 0.0 and 2.0+ where 2.0+ is considered "perfect"
 function calcTtmsRatio(ttms) {
   if(typeof ttms == "undefined" || ttms == "") {
-      return 2.0 // TODO stop returning ideal ratios for missing data
+      return -1 // TODO stop returning ideal ratios for missing data
   }
   if(ttms == 0.0) {
     ttms = 0.001;
@@ -408,6 +425,8 @@ function getZipcodeTtms() {
       continue;
     }
     var zipcode = serie.tags.postcode;
+    var deliveryservice = serie.tags.deliveryservice;
+    // console.log("getZipcodeTtms ds '" + deliveryservice + "'" + " zipcode " + zipcode);
     var stateName = ZipToStateName[zipcode];
     if(typeof stateName == "undefined" || stateName == "") {
       continue;
@@ -422,36 +441,99 @@ function getZipcodeTtms() {
       }
       latestValue = value[1];
     }
-    ZipcodeTtms[zipcode] = latestValue;
+
+    if(typeof DeliveryserviceZipcodeTtms[deliveryservice] == "undefined" || DeliveryserviceZipcodeTtms[deliveryservice] == "") {
+      DeliveryserviceZipcodeTtms[deliveryservice] = {};
+    }
+    DeliveryserviceZipcodeTtms[deliveryservice][zipcode] = latestValue;
   }
 }
 
 function getStateTtms() {
-  var stateTtmses = {};
-  for(var zipcode in ZipcodeTtms) {
-    var ttms = ZipcodeTtms[zipcode];
-    var stateName = ZipToStateName[zipcode];
-    if(typeof stateTtmses[stateName] == "undefined") {
-      stateTtmses[stateName] = [];
-    }
-    stateTtmses[stateName].push(ttms);
-    // stateZipcodes[stateName] = stateZipcodes[stateName] + 1;
-  }
+  var deliveryserviceStateTtmses = {};
+  for(var deliveryservice in DeliveryserviceZipcodeTtms) {
+    // console.log("getStateTtms ds '" + deliveryservice + "'");
 
-  for(var state in stateTtmses) {
-    var stateTtms = stateTtmses[state];
-    var sum = 0;
-    for( var ttmsi = 0; ttmsi < stateTtms.length; ttmsi++ ){
-      sum += stateTtms[ttmsi];
+    var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
+    if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
+      deliveryserviceStateTtmses[deliveryservice] = {};
     }
-    var avg = sum/stateTtms.length;
-    StateTtms[state] = avg;
+    for(var zipcode in zipcodeTtms) {
+      var ttms = DeliveryserviceZipcodeTtms[zipcode];
+      var stateName = ZipToStateName[zipcode];
+      if(typeof deliveryserviceStateTtmses[deliveryservice][stateName] == "undefined") {
+        deliveryserviceStateTtmses[deliveryservice][stateName] = [];
+      }
+      deliveryserviceStateTtmses[deliveryservice][stateName].push(ttms);
+    }
+
+    for(var deliveryservice in deliveryserviceStateTtmses) {
+      if(typeof DeliveryserviceStateTtms[deliveryservice] == "undefined") {
+        DeliveryserviceStateTtms[deliveryservice] = {};
+      }
+      for(var state in deliveryserviceStateTtmses[deliveryservice]) {
+        var stateTtms = deliveryserviceStateTtmses[deliveryservice][state];
+        var sum = 0;
+        for( var ttmsi = 0; ttmsi < stateTtms.length; ttmsi++ ){
+          sum += stateTtms[ttmsi];
+        }
+        var avg = sum/stateTtms.length;
+        DeliveryserviceStateTtms[deliveryservice][state] = avg;
+
+        DeliveryserviceZipcodeTtms[deliveryservice][zipcode] = latestValue;
+      }
+    }
   }
 }
 
-function highlightFeature(e) {
-    var layer = e.target;
+function getStateTtms() {
+  var deliveryserviceStateTtmses = {};
+  for(var deliveryservice in DeliveryserviceZipcodeTtms) {
+    var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
+    if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
+      deliveryserviceStateTtmses[deliveryservice] = {};
+    }
+    for(var zipcode in zipcodeTtms) {
+      var ttms = DeliveryserviceZipcodeTtms[deliveryservice][zipcode];
+      var stateName = ZipToStateName[zipcode];
+      if(typeof deliveryserviceStateTtmses[deliveryservice][stateName] == "undefined") {
+        deliveryserviceStateTtmses[deliveryservice][stateName] = [];
+      }
+      deliveryserviceStateTtmses[deliveryservice][stateName].push(ttms);
+    }
 
+    for(var deliveryservice in deliveryserviceStateTtmses) {
+      if(typeof DeliveryserviceStateTtms[deliveryservice] == "undefined") {
+        DeliveryserviceStateTtms[deliveryservice] = {};
+      }
+      for(var state in deliveryserviceStateTtmses[deliveryservice]) {
+        var stateTtms = deliveryserviceStateTtmses[deliveryservice][state];
+
+        var sum = 0;
+        for( var ttmsi = 0; ttmsi < stateTtms.length; ttmsi++ ){
+          sum += stateTtms[ttmsi];
+        }
+        var avg = sum/stateTtms.length;
+        DeliveryserviceStateTtms[deliveryservice][state] = avg;
+      }
+    }
+  }
+}
+
+var CurrentLayer;
+function onLayerAdd(e){
+  // console.log("Setting current layer");
+  CurrentLayer = e.target;
+}
+
+function highlightFeature(e) {
+  var layer = e.target;
+
+  // if(CurrentLayer != layer) {
+  //   console.log("highlightFeature returning");
+  //   return;
+  // }
+  // console.log("highlightFeature continuing");
     // layer.setStyle({
     //     weight: 5,
     //     color: '#666',
@@ -475,7 +557,7 @@ function resetHighlight(e) {
 function onEachFeature(feature, layer) {
     layer.on({
         mouseover: highlightFeature,
-        // mouseout: resetHighlight,
+        mouseout: resetHighlight,
         // click: zoomToFeature
     });
 }
@@ -484,32 +566,58 @@ function calcStateStats() {
   console.log("Calculating State Stats");
   overlayMapsStats["None"] = L.layerGroup();
 
-  var ttmsLayerName = "Customer Experience Ratio";
+  var initialDeliveryServiceType =  "VOD"
+  var initialLayer;
 
-  var lg = L.layerGroup();
-  overlayMapsStats[ttmsLayerName] = lg
-
-  // var myStyle = {
-  //   "color": "#ff7800",
-  //   "weight": 5,
-  //   "opacity": 0.65
-  // };
-
-  for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
-    var usState = USStatesGeoJSON.features[usstateI];
-    var usStateName = usState.properties.NAME;
-
-    usState.properties.ttmsRatio = calcTtmsRatio(StateTtms[usStateName]);
-
-    if(typeof StateTtms[usStateName] == "undefined" || StateTtms[usStateName] == "") {
-      console.log("State TTMS Ratio " + usStateName + " " + "NO DATA");
+  for(var deliveryservice in DeliveryserviceStateTtms) {
+    var dsType = "";
+    if(deliveryservice == "col-jitp2") {
+      dsType = "VOD"
+    } else if(deliveryservice == "linear-nat-pil") {
+      dsType = "Live"
+    } else {
+      console.log("Deliveryservice " + deliveryservice + " UNKNOWN - SKIPPING");
+      continue;
     }
-    // console.log("State TTMS Ratio " + usStateName + " " + usState.properties.ttmsRatio + " color " + getColor(normalizeTtmsRatio(usState.properties.ttmsRatio)));
 
-    var layer = L.geoJSON(usState, {style: ttmsStyle, onEachFeature: onEachFeature});
-    layer.addTo(map); // immediately display "Customer Experience Ratio" map
-    StatsTtmsStateLayers[usStateName] = layer;
-    overlayMapsStats[ttmsLayerName].addLayer(layer);
+    var ttmsLayerName = dsType + "Customer Experience Ratio";
+
+    var lg = L.layerGroup();
+    overlayMapsStats[ttmsLayerName] = lg
+
+    if(dsType == initialDeliveryServiceType) {
+      initialLayer = lg;
+    }
+
+    // var myStyle = {
+    //   "color": "#ff7800",
+    //   "weight": 5,
+    //   "opacity": 0.65
+    // };
+
+    var stateTtms = DeliveryserviceStateTtms[deliveryservice];
+    for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
+      var usState = USStatesGeoJSON.features[usstateI];
+
+      // copy, so states on different delivery services don't get the same properties (like ttms)
+      // TODO more efficient copy?
+      usState = JSON.parse(JSON.stringify(usState));
+
+      var usStateName = usState.properties.NAME;
+
+      usState.properties.ttmsRatio = calcTtmsRatio(stateTtms[usStateName]);
+
+      // console.log("JSON ttmsratio " + USStatesGeoJSON.features[usstateI].properties.ttmsRatio);
+
+      // if(typeof stateTtms[usStateName] == "undefined" || stateTtms[usStateName] == "") {
+      //   console.log("State TTMS Ratio " + usStateName + " " + "NO DATA");
+      // }
+      // console.log("State TTMS Ratio " + usStateName + " " + usState.properties.ttmsRatio + " color " + getColor(normalizeTtmsRatio(usState.properties.ttmsRatio)));
+
+      var layer = L.geoJSON(usState, {style: ttmsStyle, onEachFeature: onEachFeature});
+      // StatsTtmsStateLayers[usStateName] = layer;
+      overlayMapsStats[ttmsLayerName].addLayer(layer);
+    }
   }
 
   var groupedOverlays = {
@@ -523,6 +631,9 @@ function calcStateStats() {
   // TODO move to init, and call `GroupedLayers.addOverlay(layer, name, group)` here
   GroupedLayers = L.control.groupedLayers(null, groupedOverlays, groupedLayersOptions)
   GroupedLayers.addTo(map);
+  if(typeof initialLayer != "undefined") {
+    initialLayer.addTo(map);
+  }
 
   // GroupedLayers.addOverlay(StatsTtmsStateLayers, "Customer Experience Ratio", "Stats")
 
@@ -543,7 +654,7 @@ function calcStateStats() {
 
 function getLatlonStats() {
   console.log("Getting Latlon Stats ("+InfluxURL+")");
-  var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 60m group by postcode, time(30m)');
+  var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 60m group by postcode, deliveryservice, time(30m)');
   ajax(InfluxURL+"/query?"+params, function(srvTxt) {
     LatLonStats = JSON.parse(srvTxt);
     // console.log("LatLonStats: " + srvTxt);
@@ -574,8 +685,11 @@ function calcCachegroupUSStates() {
 function getRegions() {
   console.log("Getting Regions");
   ajax("/us-states-geojson.min.json", function(srvTxt) {
+    console.log("Parsing Regions");
     USStatesGeoJSON = JSON.parse(srvTxt);
+    console.log("Calculating States");
     calcCachegroupUSStates();
+    console.log("Calculating Zipcodes");
     getZipStates();
   })
 }
@@ -679,8 +793,6 @@ function getCDNs() {
 }
 
 function init(tileUrl, influxUrl) {
-  // console.log("color 0.9 is " + getColor(0.9))
-  // console.log("color 0.1 is " + getColor(0.1))
   InfluxURL = influxUrl;
   initMap(tileUrl);
   // getCDNs();
