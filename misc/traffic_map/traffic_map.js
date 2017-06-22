@@ -49,7 +49,11 @@ var deliveryServiceCachegroupServers = {};
 var USStatesGeoJSON = {};
 var CachegroupUSStates = {};
 
+var USCountiesGeoJSON = {};
+var CachegroupUSCounties = {};
+
 var ZipToStateName = {};
+var ZipToStateCounty = {}; // value is state-space-county
 
 var GroupedLayers;
 
@@ -58,6 +62,7 @@ var overlayMapsStats = {};
 // var StatsTtmsStateLayers = {};
 var DeliveryserviceZipcodeTtms = {};
 var DeliveryserviceStateTtms = {};
+var DeliveryserviceCountyTtms = {};
 
 var cdnCachegroupServers = {};
 
@@ -148,6 +153,14 @@ function ratioToPercentStr(ratio) {
   return ((1.0-ratio)*100).toString().substring(0, 2);
 }
 
+function getGeoJSONPropertiesDisplayName(properties) {
+  if(typeof properties.COUNTY == "undefined") {
+    return properties.NAME;
+  }
+  return toTitleCase(properties.NAME) + ", " + properties.STATE;
+
+}
+
 function createInfo() {
   info = L.control();
 
@@ -161,9 +174,9 @@ function createInfo() {
   info.update = function (props) {
     if(props) {
       if(props.ttmsRatio > 0.0) {
-        this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + props.NAME + '</b><br />' + props.ttmsRatio.toFixed(2) + '';
+        this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + getGeoJSONPropertiesDisplayName(props) + '</b><br />' + props.ttmsRatio.toFixed(2) + '';
       } else {
-        this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + props.NAME + '</b><br />' + '<i>no recent customers</i>' + '';
+        this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + getGeoJSONPropertiesDisplayName(props) + '</b><br />' + '<i>no recent customers</i>' + '';
       }
     } else {
      this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + 'Hover over a state';
@@ -398,7 +411,7 @@ function getColor(d) {
 function ttmsStyle(feature) {
     return {
         fillColor: getColor(normalizeTtmsRatio(feature.properties.ttmsRatio)),
-        weight: 2,
+        weight: 1,
         opacity: 1,
         color: 'white',
         dashArray: '3',
@@ -427,9 +440,9 @@ function getZipcodeTtms() {
     }
     var zipcode = serie.tags.postcode;
     var deliveryservice = serie.tags.deliveryservice;
-    // console.log("getZipcodeTtms ds '" + deliveryservice + "'" + " zipcode " + zipcode);
     var stateName = ZipToStateName[zipcode];
     if(typeof stateName == "undefined" || stateName == "") {
+			console.log("ZipToStateName[" + zipcode + "] undefined!");
       continue;
     }
 
@@ -443,29 +456,39 @@ function getZipcodeTtms() {
       latestValue = value[1];
     }
 
-    if(typeof DeliveryserviceZipcodeTtms[deliveryservice] == "undefined" || DeliveryserviceZipcodeTtms[deliveryservice] == "") {
+    if(typeof DeliveryserviceZipcodeTtms[deliveryservice] == "undefined") {
       DeliveryserviceZipcodeTtms[deliveryservice] = {};
     }
     DeliveryserviceZipcodeTtms[deliveryservice][zipcode] = latestValue;
   }
 }
 
-function getStateTtms() {
+function getStateAndCountyTtms() {
   var deliveryserviceStateTtmses = {};
-  for(var deliveryservice in DeliveryserviceZipcodeTtms) {
-    // console.log("getStateTtms ds '" + deliveryservice + "'");
+  var deliveryserviceCountyTtmses = {};
 
+  for(var deliveryservice in DeliveryserviceZipcodeTtms) {
     var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
     if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
       deliveryserviceStateTtmses[deliveryservice] = {};
     }
+    if(typeof deliveryserviceCountyTtmses[deliveryservice] == "undefined") {
+      deliveryserviceCountyTtmses[deliveryservice] = {};
+    }
+
     for(var zipcode in zipcodeTtms) {
-      var ttms = DeliveryserviceZipcodeTtms[zipcode];
+      var ttms = zipcodeTtms[zipcode];
       var stateName = ZipToStateName[zipcode];
+      var countyName = ZipToStateCounty[zipcode];
       if(typeof deliveryserviceStateTtmses[deliveryservice][stateName] == "undefined") {
         deliveryserviceStateTtmses[deliveryservice][stateName] = [];
       }
       deliveryserviceStateTtmses[deliveryservice][stateName].push(ttms);
+
+      if(typeof deliveryserviceCountyTtmses[deliveryservice][countyName] == "undefined") {
+        deliveryserviceCountyTtmses[deliveryservice][countyName] = [];
+      }
+      deliveryserviceCountyTtmses[deliveryservice][countyName].push(ttms);
     }
 
     for(var deliveryservice in deliveryserviceStateTtmses) {
@@ -480,46 +503,59 @@ function getStateTtms() {
         }
         var avg = sum/stateTtms.length;
         DeliveryserviceStateTtms[deliveryservice][state] = avg;
-
-        DeliveryserviceZipcodeTtms[deliveryservice][zipcode] = latestValue;
       }
     }
-  }
-}
 
-function getStateTtms() {
-  var deliveryserviceStateTtmses = {};
-  for(var deliveryservice in DeliveryserviceZipcodeTtms) {
-    var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
-    if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
-      deliveryserviceStateTtmses[deliveryservice] = {};
-    }
-    for(var zipcode in zipcodeTtms) {
-      var ttms = DeliveryserviceZipcodeTtms[deliveryservice][zipcode];
-      var stateName = ZipToStateName[zipcode];
-      if(typeof deliveryserviceStateTtmses[deliveryservice][stateName] == "undefined") {
-        deliveryserviceStateTtmses[deliveryservice][stateName] = [];
+    for(var deliveryservice in deliveryserviceCountyTtmses) {
+      if(typeof DeliveryserviceCountyTtms[deliveryservice] == "undefined") {
+        DeliveryserviceCountyTtms[deliveryservice] = {};
       }
-      deliveryserviceStateTtmses[deliveryservice][stateName].push(ttms);
-    }
-
-    for(var deliveryservice in deliveryserviceStateTtmses) {
-      if(typeof DeliveryserviceStateTtms[deliveryservice] == "undefined") {
-        DeliveryserviceStateTtms[deliveryservice] = {};
-      }
-      for(var state in deliveryserviceStateTtmses[deliveryservice]) {
-        var stateTtms = deliveryserviceStateTtmses[deliveryservice][state];
-
+      for(var county in deliveryserviceCountyTtmses[deliveryservice]) {
+        var countyTtms = deliveryserviceCountyTtmses[deliveryservice][county];
         var sum = 0;
-        for( var ttmsi = 0; ttmsi < stateTtms.length; ttmsi++ ){
-          sum += stateTtms[ttmsi];
+        for( var ttmsi = 0; ttmsi < countyTtms.length; ttmsi++ ){
+          sum += countyTtms[ttmsi];
         }
-        var avg = sum/stateTtms.length;
-        DeliveryserviceStateTtms[deliveryservice][state] = avg;
+        var avg = sum/countyTtms.length;
+        DeliveryserviceCountyTtms[deliveryservice][county] = avg;
       }
     }
   }
 }
+
+// function getStateTtms() {
+//   var deliveryserviceStateTtmses = {};
+//   for(var deliveryservice in DeliveryserviceZipcodeTtms) {
+//     var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
+//     if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
+//       deliveryserviceStateTtmses[deliveryservice] = {};
+//     }
+//     for(var zipcode in zipcodeTtms) {
+//       var ttms = DeliveryserviceZipcodeTtms[deliveryservice][zipcode];
+//       var stateName = ZipToStateName[zipcode];
+//       if(typeof deliveryserviceStateTtmses[deliveryservice][stateName] == "undefined") {
+//         deliveryserviceStateTtmses[deliveryservice][stateName] = [];
+//       }
+//       deliveryserviceStateTtmses[deliveryservice][stateName].push(ttms);
+//     }
+
+//     for(var deliveryservice in deliveryserviceStateTtmses) {
+//       if(typeof DeliveryserviceStateTtms[deliveryservice] == "undefined") {
+//         DeliveryserviceStateTtms[deliveryservice] = {};
+//       }
+//       for(var state in deliveryserviceStateTtmses[deliveryservice]) {
+//         var stateTtms = deliveryserviceStateTtmses[deliveryservice][state];
+
+//         var sum = 0;
+//         for( var ttmsi = 0; ttmsi < stateTtms.length; ttmsi++ ){
+//           sum += stateTtms[ttmsi];
+//         }
+//         var avg = sum/stateTtms.length;
+//         DeliveryserviceStateTtms[deliveryservice][state] = avg;
+//       }
+//     }
+//   }
+// }
 
 var CurrentLayer;
 function onLayerAdd(e){
@@ -581,21 +617,9 @@ function calcStateStats() {
       continue;
     }
 
-    var ttmsLayerName = dsType + " Customer Experience Ratio";
-
+    var stateTtmsLayerName = dsType + " Customer Experience Ratio by State";
     var lg = L.layerGroup();
-    overlayMapsStats[ttmsLayerName] = lg
-
-    if(dsType == initialDeliveryServiceType) {
-      initialLayer = lg;
-    }
-
-    // var myStyle = {
-    //   "color": "#ff7800",
-    //   "weight": 5,
-    //   "opacity": 0.65
-    // };
-
+    overlayMapsStats[stateTtmsLayerName] = lg
     var stateTtms = DeliveryserviceStateTtms[deliveryservice];
     for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
       var usState = USStatesGeoJSON.features[usstateI];
@@ -608,16 +632,30 @@ function calcStateStats() {
 
       usState.properties.ttmsRatio = calcTtmsRatio(stateTtms[usStateName]);
 
-      // console.log("JSON ttmsratio " + USStatesGeoJSON.features[usstateI].properties.ttmsRatio);
-
-      // if(typeof stateTtms[usStateName] == "undefined" || stateTtms[usStateName] == "") {
-      //   console.log("State TTMS Ratio " + usStateName + " " + "NO DATA");
-      // }
-      // console.log("State TTMS Ratio " + usStateName + " " + usState.properties.ttmsRatio + " color " + getColor(normalizeTtmsRatio(usState.properties.ttmsRatio)));
-
       var layer = L.geoJSON(usState, {style: ttmsStyle, onEachFeature: onEachFeature});
-      // StatsTtmsStateLayers[usStateName] = layer;
-      overlayMapsStats[ttmsLayerName].addLayer(layer);
+      overlayMapsStats[stateTtmsLayerName].addLayer(layer);
+    }
+
+    var countyTtmsLayerName = dsType + " Customer Experience Ratio by County";
+    var lg = L.layerGroup();
+    overlayMapsStats[countyTtmsLayerName] = lg
+    if(dsType == initialDeliveryServiceType) {
+      initialLayer = lg;
+    }
+    var countyTtms = DeliveryserviceCountyTtms[deliveryservice];
+    for(var countyI = 0; countyI < USCountiesGeoJSON.features.length; countyI++) {
+      var county = USCountiesGeoJSON.features[countyI];
+
+      // copy, so geojson on different delivery services don't get the same properties (like ttms)
+      // TODO more efficient copy?
+      county = JSON.parse(JSON.stringify(county));
+
+      var countyName = countyKeyNameGeoJSON(county);
+
+      county.properties.ttmsRatio = calcTtmsRatio(countyTtms[countyName]);
+
+      var layer = L.geoJSON(county, {style: ttmsStyle, onEachFeature: onEachFeature});
+      overlayMapsStats[countyTtmsLayerName].addLayer(layer);
     }
   }
 
@@ -642,32 +680,18 @@ function calcStateStats() {
   }
   createInfo();
 
-  // GroupedLayers.addOverlay(StatsTtmsStateLayers, "Customer Experience Ratio", "Stats")
-
-  // var groupedOverlays = {
-  //   "CDNs": overlayMapsCdn,
-  //   "Delivery Services": overlayMapsDs,
-  // };
-  // var groupedLayersOptions = {
-  //   exclusiveGroups: ["CDNs", "Delivery Services"],
-  // };
-  // // TODO move to init, and call `GroupedLayers.addOverlay(layer, name, group)` here
-  // GroupedLayers = L.control.groupedLayers(null, groupedOverlays, groupedLayersOptions)
-  // GroupedLayers.addTo(map);
-
   map.invalidateSize();
   console.log("Done");
 }
 
 function getLatlonStats() {
   console.log("Getting Latlon Stats ("+InfluxURL+")");
-  var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 60m group by postcode, deliveryservice, time(30m)');
+  var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)');
   ajax(InfluxURL+"/query?"+params, function(srvTxt) {
     LatLonStats = JSON.parse(srvTxt);
-    // console.log("LatLonStats: " + srvTxt);
     if(typeof LatLonStats.results[0].series != "undefined") {
       getZipcodeTtms();
-      getStateTtms();
+      getStateAndCountyTtms();
       calcStateStats();
     } else {
       console.log("Influx returned no series!")
@@ -689,26 +713,68 @@ function calcCachegroupUSStates() {
   }
 }
 
+
+// from https://stackoverflow.com/questions/19974619/capitalize-first-letter-lowercase-the-rest-with-exceptions
+function toTitleCase(str){
+    return str.replace(/\w\S*/g, function(txt){return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();});
+}
+function countyKeyNameGeoJSON(county) {
+  return county.properties.STATE + ", " + toTitleCase(county.properties.NAME); // TODO fix JSON to be title-cased
+}
+
+function countyKeyNameStrs(state, county) {
+	return state + ", " + toTitleCase(county);
+}
+
+function calcCachegroupUSCounties() {
+  for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
+    var cachegroup = cachegroups[cachegroupI];
+    var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
+    for(var countyI = 0; countyI < USCountiesGeoJSON.features.length; countyI++) {
+      var county = USCountiesGeoJSON.features[countyI];
+      if(GeoJSONLatLonInFeature(cachegroupLonLat, county)) {
+        CachegroupUSCounties[cachegroup.name] = countyKeyNameGeoJSON(county);
+      }
+    }
+  }
+}
+
+
+// TODO rename
 function getRegions() {
-  console.log("Getting Regions");
+  console.log("Getting US States");
   ajax("/us-states-geojson.min.json", function(srvTxt) {
-    console.log("Parsing Regions");
+    console.log("Parsing US States");
     USStatesGeoJSON = JSON.parse(srvTxt);
-    console.log("Calculating States");
     calcCachegroupUSStates();
-    console.log("Calculating Zipcodes");
+    getCounties();
+  })
+}
+
+function getCounties() {
+  console.log("Getting US Counties");
+  ajax("/us-counties-geojson.min.json", function(srvTxt) {
+    USCountiesGeoJSON = JSON.parse(srvTxt);
+    calcCachegroupUSCounties();
     getZipStates();
   })
 }
 
+
 function getZipStates() {
   console.log("Getting Zipcodes");
-  ajax("/zip-to-state-name.json", function(srvTxt) {
+  ajax("/us-state-county-zips.min.json", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
-    ZipToStateName = JSON.parse(srvTxt);
+    zips = raw["result"];
+    for(var zipi = 0; zipi < zips.length; zipi++) {
+      var zip = zips[zipi];
+      ZipToStateName[zip.Zipcode] = zip.State;
+      ZipToStateCounty[zip.Zipcode] = countyKeyNameStrs(zip.State, zip.County);
+    }
     getLatlonStats();
   })
 }
+
 
 // function hostnameFromFqdn(fqdn) {
 //   var dotPos = fqdn.indexOf(".");
