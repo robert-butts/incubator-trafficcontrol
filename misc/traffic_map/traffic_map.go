@@ -55,7 +55,7 @@ const (
 )
 
 // CacheDuration is the length of time to cache data results (CRStates, CRConfig, etc). If a client requests a data object, and the last request happened less than this duration in the past, the last value is returned. This is live data, so Cache-Control doesn't really apply here, but we don't want to let clients kill our servers. Cached results should return an Age header.
-const CacheDuration = time.Duration(10 * time.Second)
+const CacheDuration = time.Duration(24 * time.Hour)
 
 // CachedResult is designed for caching with closing lambdas. It MAY NOT be copied. If you need to pass this to something, pass the pointer.
 type CachedResult struct {
@@ -225,14 +225,36 @@ func getCRConfigs(toClient *to.Session) ([]crconfig.CRConfig, error) {
 	return crConfigs, nil
 }
 
+type SimpleServer struct {
+	HostName   string `json:"hostName"`
+	Cachegroup string `json:"cachegroup"`
+	CDNName    string `json:"cdnName"`
+}
+
+type SimpleServerResponse struct {
+	Response []SimpleServer `json:"response"`
+}
+
+func serversToSimple(servers []to.Server) []SimpleServer {
+	ss := make([]SimpleServer, 0, len(servers))
+	for _, s := range servers {
+		ss = append(ss, SimpleServer{
+			HostName:   s.HostName,
+			Cachegroup: s.Cachegroup,
+			CDNName:    s.CDNName,
+		})
+	}
+	return ss
+}
+
 func getHandleServers(toClient *to.Session) http.HandlerFunc {
 	// TODO change use one CRConfig cache for all data that comes from it
 	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
-		servers, err := toClient.Servers()
+		servers, err := toClient.ServersByType(url.Values{"type": []string{"EDGE"}})
 		if err != nil {
 			return nil, fmt.Errorf("error getting Servers: %v", err)
 		}
-		resp := to.ServerResponse{Response: servers}
+		resp := SimpleServerResponse{Response: serversToSimple(servers)}
 		bts, err := json.Marshal(resp)
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling Servers: %v", err)
