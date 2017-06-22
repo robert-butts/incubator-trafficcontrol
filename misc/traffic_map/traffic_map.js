@@ -580,7 +580,7 @@ function calcStateStats() {
       continue;
     }
 
-    var ttmsLayerName = dsType + "Customer Experience Ratio";
+    var ttmsLayerName = dsType + " Customer Experience Ratio";
 
     var lg = L.layerGroup();
     overlayMapsStats[ttmsLayerName] = lg
