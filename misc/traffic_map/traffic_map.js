@@ -161,6 +161,35 @@ function getGeoJSONPropertiesDisplayName(properties) {
 
 }
 
+function startsWith(s, prefix) {
+  return s.substring(0, prefix.length) === prefix;
+}
+function endsWith(s, suffix) {
+ return s.indexOf(suffix, s.length - suffix.length) !== -1;
+}
+function contains(s, val) {
+ return s.indexOf(val) != -1;
+}
+
+function showCachegroup(cg) {
+  if(cg.typeName != "EDGE_LOC") {
+    return false;
+  }
+  if(!startsWith(cg.name, "us-")) {
+    return false;
+  }
+  if(startsWith(cg.name, "us-bb-")) {
+    return false;
+  }
+  if(endsWith(cg.name, "lab")) {
+    return false;
+  }
+  if(contains(cg.name, "cox")) {
+    return false;
+  }
+  return true;
+}
+
 function createInfo() {
   info = L.control();
 
@@ -877,7 +906,13 @@ function getCachegroups() {
   console.log("Getting Cachegroups");
   ajax("/api/1.2/cachegroups.json", function(cgTxt) {
     var rawCachegroups = JSON.parse(cgTxt);
-    cachegroups = rawCachegroups["response"];
+    cachegroups = [];
+    for(var cachegroupI = 0; cachegroupI < rawCachegroups["response"].length; cachegroupI++) {
+      var cachegroup = rawCachegroups["response"][cachegroupI];
+      if(showCachegroup(cachegroup)) {
+        cachegroups.push(cachegroup);
+      }
+    }
     getServers(); // TODO concurrently request with cachegroups
   })
 }
