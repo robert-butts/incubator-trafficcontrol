@@ -627,6 +627,7 @@ function calcStateStats() {
   };
   var groupedLayersOptions = {
     exclusiveGroups: ["CDNs", "Stats", "Delivery Services"],
+    collapsed: false
   };
   // TODO move to init, and call `GroupedLayers.addOverlay(layer, name, group)` here
   GroupedLayers = L.control.groupedLayers(null, groupedOverlays, groupedLayersOptions)
