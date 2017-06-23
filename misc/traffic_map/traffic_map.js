@@ -1000,6 +1000,7 @@ function getCDNs() {
 
 function init(tileUrl, influxUrl) {
   InfluxURL = influxUrl;
+  toggleTop.checked = true;
   initMap(tileUrl);
   getCDNs();
   // getRegions();
