@@ -713,6 +713,9 @@ function calcStateStats() {
       var usStateName = usState.properties.NAME;
 
       usState.properties.ttmsRatio = calcTtmsRatio(stateTtms[usStateName]);
+      if (usState.properties.ttmsRatio == -1) {
+        continue; // don't draw regions with no data - comment this to draw dataless counties as grey, giving the illusion of a complete map overlay
+      }
 
       var layer = L.geoJSON(usState, {style: ttmsStyle, onEachFeature: onEachFeature});
       overlayMapsStats[stateTtmsLayerName].addLayer(layer);
@@ -735,6 +738,9 @@ function calcStateStats() {
       var countyName = countyKeyNameGeoJSON(county);
 
       county.properties.ttmsRatio = calcTtmsRatio(countyTtms[countyName]);
+      if (county.properties.ttmsRatio == -1) {
+        continue; // don't draw regions with no data - comment this to draw dataless counties as grey, giving the illusion of a complete map overlay
+      }
 
       var layer = L.geoJSON(county, {style: ttmsStyle, onEachFeature: onEachFeature});
       overlayMapsStats[countyTtmsLayerName].addLayer(layer);
