@@ -768,8 +768,9 @@ function calcStateStats() {
 
 function getLatlonStats() {
   console.log("Getting Latlon Stats ("+InfluxURL+")");
-  var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)');
-  ajax(InfluxURL+"/query?"+params, function(srvTxt) {
+  // var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)');
+  // ajax(InfluxURL+"/query?"+params, function(srvTxt) {
+  ajax('/query', function(srvTxt) {
     LatLonStats = JSON.parse(srvTxt);
     if(typeof LatLonStats.results[0].series != "undefined") {
       getZipcodeTtms();

@@ -166,6 +166,7 @@ func main() {
 	http.HandleFunc("/zip-to-state-name.json", fileHandler("zip-to-state-name.json", ContentTypeJSON))
 	http.HandleFunc("/us-counties-geojson.min.json", fileHandler("us-counties-geojson.min.json", ContentTypeJSON))
 	http.HandleFunc("/us-state-county-zips.min.json", fileHandler("us-state-county-zips.min.json", ContentTypeJSON))
+	http.HandleFunc("/query", getHandleInflux(*influxUrl))
 
 	fmt.Printf("Serving on %v\n", *port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), nil); err != nil {
@@ -573,4 +574,22 @@ func makeGzipHandler(fn http.HandlerFunc) http.HandlerFunc {
 		gzr := gzipResponseWriter{Writer: gz, ResponseWriter: w}
 		fn(gzr, r)
 	}
+}
+
+func getHandleInflux(influxURL string) http.HandlerFunc {
+	client := httpClient()
+	params := fmt.Sprintf("db=%s&q=%s", url.QueryEscape("latlon_stats"), url.QueryEscape("select mean(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)"))
+	reqUrl := fmt.Sprintf("%s/query?%s", influxURL, params)
+	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
+		resp, err := client.Get(reqUrl)
+		if err != nil {
+			return nil, fmt.Errorf("getting influx data: %v", err)
+		}
+		defer resp.Body.Close()
+		bts, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("reading influx data: %v", err)
+		}
+		return bts, nil
+	})
 }
