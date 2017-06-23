@@ -299,7 +299,7 @@ function addCache(cachegroupMarkerPopupContent, cacheName) {
 }
 
 function getStates() {
-  console.log("Getting Server State");
+  topbar.innerHTML = "Loading CDN Server State";
   ajax("/publish/CrStates", function(srvTxt) {
     var rawStates = JSON.parse(srvTxt);
     var cacheStates = rawStates["caches"];
@@ -337,7 +337,7 @@ function getCRConfigs(cdns) {
     getCRConfigs(cdns.slice(1));
     return;
   }
-  console.log("Getting CDN Config " + cdn.name);
+  topbar.innerHTML = "Loading CDN Config";
   ajax('/CRConfig-Snapshots/' + cdn.name + '/CRConfig.json', function(srvTxt) {
     var crconfig = JSON.parse(srvTxt);
     crconfigs[cdn.name] = crconfig;
@@ -375,7 +375,7 @@ function addDeliveryServiceServers(crconfig) {
 }
 
 function getDeliveryServicesState() {
-  console.log("Getting Deliveryservice State");
+  topbar.innerHTML = "Loading Deliveryservice State";
   ajax("/publish/DsStats", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
     deliveryServices = raw["deliveryService"];
@@ -682,7 +682,7 @@ function reloadStatsStyles() {
 }
 
 function calcStateStats() {
-  console.log("Calculating State Stats");
+  topbar.innerHTML = "Calculating US State Stats";
   overlayMapsStats["None"] = L.layerGroup();
 
   var initialDeliveryServiceType =  "VOD"
@@ -763,11 +763,11 @@ function calcStateStats() {
   createInfo();
 
   map.invalidateSize();
-  console.log("Done");
+  toggleTop.checked = false;
 }
 
 function getLatlonStats() {
-  console.log("Getting Latlon Stats ("+InfluxURL+")");
+  topbar.innerHTML = "Loading Location Stats";
   // var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)');
   // ajax(InfluxURL+"/query?"+params, function(srvTxt) {
   ajax('/query', function(srvTxt) {
@@ -778,7 +778,7 @@ function getLatlonStats() {
       calcStateStats();
     } else {
       console.log("Influx returned no series!")
-      console.log("Done (failed)")
+      topbar.innerHTML = "Failed To Load Location Stats (try refreshing the page)";
     }
   })
 }
@@ -825,9 +825,9 @@ function calcCachegroupUSCounties() {
 
 // TODO rename
 function getRegions() {
-  console.log("Getting US States");
+  topbar.innerHTML = "Loading US State Data";
   ajax("/us-states-geojson.min.json", function(srvTxt) {
-    console.log("Parsing US States");
+    topbar.innerHTML = "Parsing US State Data";
     USStatesGeoJSON = JSON.parse(srvTxt);
     calcCachegroupUSStates();
     getCounties();
@@ -835,7 +835,7 @@ function getRegions() {
 }
 
 function getCounties() {
-  console.log("Getting US Counties");
+  topbar.innerHTML = "Loading US County Data";
   ajax("/us-counties-geojson.min.json", function(srvTxt) {
     USCountiesGeoJSON = JSON.parse(srvTxt);
     calcCachegroupUSCounties();
@@ -845,7 +845,7 @@ function getCounties() {
 
 
 function getZipStates() {
-  console.log("Getting Zipcodes");
+  topbar.innerHTML = "Loading Zipcode data";
   ajax("/us-state-county-zips.min.json", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
     zips = raw["result"];
@@ -912,7 +912,7 @@ function addCachegroupLayers() {
 }
 
 function getServers() {
-  console.log("Getting Servers");
+  topbar.innerHTML = "Loading CDN Server Data";
   ajax("/api/1.2/servers.json", function(srvTxt) {
     var rawServers = JSON.parse(srvTxt);
     servers = rawServers["response"];
@@ -957,7 +957,7 @@ function getServers() {
 }
 
 function getCachegroups() {
-  console.log("Getting Cachegroups");
+  topbar.innerHTML = "Loading Cachegroups";
   ajax("/api/1.2/cachegroups.json", function(cgTxt) {
     var rawCachegroups = JSON.parse(cgTxt);
     cachegroups = [];
@@ -972,7 +972,8 @@ function getCachegroups() {
 }
 
 function getCDNs() {
-  console.log("Getting CDNs");
+  topbar.innerHTML = "Loading CDNs";
+
   ajax("/api/1.2/cdns.json", function(txt) {
     var raw = JSON.parse(txt);
     cdns = raw["response"];

@@ -44,6 +44,15 @@ under the License.
     <script src="traffic_map.js"></script>
   </head>
   <body onload="init('{{.TileURL}}', '{{.InfluxURL}}')">
+
+  <!-- notification bar from https://codepen.io/crossphd/pen/zKjaxb licensed MIT -->
+		<!-- <label for="toggleTop" id="showTop">+</label> -->
+  <input type="checkbox" id="toggleTop" name="toggleTop" value="toggleTop" checked="checked">
+  <div id="topbar">
+    Loading Map
+    <!-- <label for="toggleTop" id="hideTop">X</label> -->
+  </div>
+
     <div id="map0"></div>
   </body>
 </html>
