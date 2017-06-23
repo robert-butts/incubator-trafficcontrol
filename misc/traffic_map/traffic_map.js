@@ -235,6 +235,8 @@ function showCachegroup(cg) {
   return true;
 }
 
+var CurrentRegionType = "";
+
 function createInfo() {
   info = L.control();
 
@@ -253,7 +255,10 @@ function createInfo() {
         this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + getGeoJSONPropertiesDisplayName(props) + '</b><br />' + '<i>no recent customers</i>' + '';
       }
     } else {
-     this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + 'Hover over a state';
+      this._div.innerHTML = '<h4>Customer Experience Ratio</h4>';
+      if(typeof CurrentRegionType != "undefined" && CurrentRegionType != "") {
+        this._div.innerHTML += 'Hover over a ' + CurrentRegionType;
+      }
     }
   };
 
@@ -269,6 +274,7 @@ function initMap(tileUrl) {
   map.addLayer(osm);
   createLegend();
   map.on('layeradd', onLayerAdd);
+  map.on('overlayadd', onOverlayAdd);
 }
 
 function getCachegroupMarkerPopup(cg) {
@@ -635,6 +641,16 @@ function onLayerAdd(e){
   CurrentLayer = e.target;
 }
 
+function onOverlayAdd(e){
+  if(typeof e.layer.regionType != "undefined") {
+    CurrentRegionType = e.layer.regionType;
+    if(typeof info != "undefined") {
+      info.update();
+    }
+  }
+}
+
+
 function highlightFeature(e) {
   var layer = e.target;
 
@@ -683,7 +699,9 @@ function reloadStatsStyles() {
 
 function calcStateStats() {
   topbar.innerHTML = "Calculating US State Stats";
-  overlayMapsStats["None"] = L.layerGroup();
+  var lgStatsNone = L.layerGroup();
+  lgStatsNone.regionType = "";
+  overlayMapsStats["None"] = lgStatsNone
 
   var initialDeliveryServiceType =  "VOD"
   var initialLayer;
@@ -701,6 +719,8 @@ function calcStateStats() {
 
     var stateTtmsLayerName = dsType + " Customer Experience Ratio by State";
     var lg = L.layerGroup();
+    lg.regionType = "state";
+
     overlayMapsStats[stateTtmsLayerName] = lg
     var stateTtms = DeliveryserviceStateTtms[deliveryservice];
     for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
@@ -723,10 +743,13 @@ function calcStateStats() {
 
     var countyTtmsLayerName = dsType + " Customer Experience Ratio by County";
     var lg = L.layerGroup();
+    lg.regionType = "county";
+
     overlayMapsStats[countyTtmsLayerName] = lg
     if(dsType == initialDeliveryServiceType) {
       initialLayer = lg;
     }
+
     var countyTtms = DeliveryserviceCountyTtms[deliveryservice];
     for(var countyI = 0; countyI < USCountiesGeoJSON.features.length; countyI++) {
       var county = USCountiesGeoJSON.features[countyI];
