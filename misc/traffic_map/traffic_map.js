@@ -874,7 +874,7 @@ function getCounties() {
 
 
 function getZipStates() {
-  topbar.innerHTML = "Loading Zipcode data";
+  topbar.innerHTML = "Loading Zipcode Data";
   ajax("/us-state-county-zips.min.json", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
     zips = raw["result"];
