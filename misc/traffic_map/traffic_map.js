@@ -68,6 +68,8 @@ var cdnCachegroupServers = {};
 
 var info; // info pane
 
+var ColorBadnessDivisor = 1.0;
+
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
   xmlhttp.onreadystatechange = function(){
@@ -129,24 +131,67 @@ function pointInPolygon(point, vs) {
   return inside;
 }
 
+// TODO abstract duplicate code
+function reloadLegendStyle() {
+  var span = document.getElementById("legendSpan")
+  grades = [2.0, 1.75, 1.5, 1.0, 0.5, 0.0]
+  labels = [];
+
+  // loop through our density intervals and generate a label with a colored square for each interval
+  span.innerHTML = "";
+  for (var i = 0; i < grades.length-1; i++) {
+    span.innerHTML += '<i style="background:' + getColor(normalizeTtmsRatio(grades[i+1])) + '"></i> ' + (i == 0 ? '+':'&nbsp&nbsp') + grades[i].toFixed(2) + '&ndash;' + grades[i+1].toFixed(2) + '<br>';
+  }
+}
+
 function createLegend() {
   var legend = L.control({position: 'bottomright'});
 
   var ColorOffset = 1.5 // needs to be yellower, green is stronger than yellow.
 
   legend.onAdd = function (map) {
-    var div = L.DomUtil.create('div', 'info legend'),
+    var div = L.DomUtil.create('div', 'info legend');
+    div.id = "legendDiv";
     grades = [2.0, 1.75, 1.5, 1.0, 0.5, 0.0]
     labels = [];
 
+    var legendSpan = document.createElement('span');
+    legendSpan.id = "legendSpan";
     // loop through our density intervals and generate a label with a colored square for each interval
     for (var i = 0; i < grades.length-1; i++) {
-      div.innerHTML += '<i style="background:' + getColor(normalizeTtmsRatio(grades[i+1])) + '"></i> ' + (i == 0 ? '+':'&nbsp&nbsp') + grades[i].toFixed(2) + '&ndash;' + grades[i+1].toFixed(2) + '<br>';
+      legendSpan.innerHTML += '<i style="background:' + getColor(normalizeTtmsRatio(grades[i+1])) + '"></i> ' + (i == 0 ? '+':'&nbsp&nbsp') + grades[i].toFixed(2) + '&ndash;' + grades[i+1].toFixed(2) + '<br>';
     }
+    div.appendChild(legendSpan);
+
+    // div.innerHTML += '<h4>Intensity</h4>';
+    var slider = document.createElement("INPUT");
+    slider.className += " slider";
+    slider.setAttribute("type", "range");
+    slider.setAttribute("min", "1");
+    slider.setAttribute("max", "99");
+    slider.setAttribute("step", "1");
+    slider.value = 1;
+    slider.oninput = function() {
+      ColorBadnessDivisor = (100 - slider.value) / 100;
+      reloadStatsStyles();
+      map.invalidateSize();
+    }
+    div.appendChild(slider);
 
     return div;
   };
+
   legend.addTo(map);
+
+  // Disable dragging when user's cursor enters the element
+  legend.getContainer().addEventListener('mouseover', function () {
+    map.dragging.disable();
+  });
+
+  // Re-enable dragging when user's cursor leaves the element
+  legend.getContainer().addEventListener('mouseout', function () {
+    map.dragging.enable();
+  });
 }
 
 function ratioToPercentStr(ratio) {
@@ -223,7 +268,7 @@ function initMap(tileUrl) {
   map.setView(new L.LatLng(39.73, -104.98),5);
   map.addLayer(osm);
   createLegend();
-	map.on('layeradd', onLayerAdd);
+  map.on('layeradd', onLayerAdd);
 }
 
 function getCachegroupMarkerPopup(cg) {
@@ -373,8 +418,6 @@ function normalizeTtmsRatio(d) {
     return d
   }
   var oldD = d;
-
-  var ColorBadnessDivisor = 0.1; // debug - color value is divided by this ratio, lower means less green and more red
 
   d = d * ColorBadnessDivisor;
   var badnessChange = d;
@@ -626,6 +669,16 @@ function onEachFeature(feature, layer) {
         mouseout: resetHighlight,
         // click: zoomToFeature
     });
+}
+
+function reloadStatsStyles() {
+  reloadLegendStyle();
+  for(var overlayLayerName in overlayMapsStats) {
+    var overlayLayer = overlayMapsStats[overlayLayerName];
+    overlayLayer.eachLayer(function (layer) {
+      layer.setStyle(ttmsStyle);
+    });
+  }
 }
 
 function calcStateStats() {
