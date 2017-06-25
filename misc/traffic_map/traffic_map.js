@@ -712,6 +712,10 @@ function calcStateStats() {
       dsType = "VOD"
     } else if(deliveryservice == "linear-nat-pil") {
       dsType = "Live"
+    } else if(deliveryservice == "cdvr") {
+      dsType = "DVR"
+    } else if(deliveryservice == "cdvr-rio") {
+      dsType = "DVR Rio"
     } else {
       console.log("Deliveryservice " + deliveryservice + " UNKNOWN - SKIPPING");
       continue;
