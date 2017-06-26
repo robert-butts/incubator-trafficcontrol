@@ -7,68 +7,74 @@ var cacheAvailableColor = '#009900';
 var cacheOfflineColor = '#FFBB00';
 var cacheUnavailableColor = '#FF0000';
 
-var iconSize = [25, 25];
-var cgIcon = L.icon({
-  iconUrl: 'cg-grey.png',
-  iconSize:     iconSize,
-  iconAnchor:   [0, 0],
-  popupAnchor:  [10, 2]
-});
-var cgErrIcon = L.icon({
-  iconUrl: 'cg-red.png',
-  iconSize:     iconSize,
-  iconAnchor:   [0, 0],
-  popupAnchor:  [-3, -76]
-});
-var cgWarnIcon = L.icon({
-  iconUrl: 'cg-orange.png',
-  iconSize:     iconSize,
-  iconAnchor:   [0, 0],
-  popupAnchor:  [-3, -76]
-});
-var servers = {};
-var cachegroups = {};
-var cachegroupMarkers = {};
-var cacheCachegroups = {};
-var cachegroupCaches = {};
-var cachePopupElems = {};
+// var iconSize = [25, 25];
+// var cgIcon = L.icon({
+//   iconUrl: 'cg-grey.png',
+//   iconSize:     iconSize,
+//   iconAnchor:   [0, 0],
+//   popupAnchor:  [10, 2]
+// });
+// var cgErrIcon = L.icon({
+//   iconUrl: 'cg-red.png',
+//   iconSize:     iconSize,
+//   iconAnchor:   [0, 0],
+//   popupAnchor:  [-3, -76]
+// });
+// var cgWarnIcon = L.icon({
+//   iconUrl: 'cg-orange.png',
+//   iconSize:     iconSize,
+//   iconAnchor:   [0, 0],
+//   popupAnchor:  [-3, -76]
+// });
 
-var cdns = {};
-var cdnServerLayerGroups = {};
-var overlayMapsCdn = {};
-var overlayMapsDs = {};
+var servers = null;
+var cachegroups = null;
+// var cachegroupMarkers = {};
+// var cacheCachegroups = {};
+// var cachegroupCaches = {};
+// var cachePopupElems = {};
 
-var deliveryServices = {};
-var deliveryServiceMarkers = {}; // deliveryServiceMarkers[deliveryServiceName][cachegroup]marker
-var deliveryServiceLayerGroups = {};
+var cdns = null;
+var overlayMapsCdn = null;
+// var overlayMapsDs = {};
 
-var crconfigs = {};
-var deliveryServiceServers = {};
-var deliveryServiceCachegroupServers = {};
+// var deliveryServices = {};
+// var deliveryServiceMarkers = {}; // deliveryServiceMarkers[deliveryServiceName][cachegroup]marker
+// var deliveryServiceLayerGroups = {};
 
-var USStatesGeoJSON = {};
-var CachegroupUSStates = {};
+// var crconfigs = {};
+// var deliveryServiceServers = {};
+// var deliveryServiceCachegroupServers = {};
 
-var USCountiesGeoJSON = {};
-var CachegroupUSCounties = {};
+var USStatesGeoJSON = null;
+// var CachegroupUSStates = {};
 
-var ZipToStateName = {};
-var ZipToStateCounty = {}; // value is state-space-county
+var USCountiesGeoJSON = null;
+// var CachegroupUSCounties = {};
 
-var GroupedLayers;
+var ZipToStateName = null;
+var ZipToStateCounty = null; // value is state-space-county
 
-var LatLonStats = {};
-var overlayMapsStats = {};
+var GroupedLayers = null;
+
+var LatLonStats = null;
+var overlayMapsStats = null;
 // var StatsTtmsStateLayers = {};
-var DeliveryserviceZipcodeTtms = {};
-var DeliveryserviceStateTtms = {};
-var DeliveryserviceCountyTtms = {};
+var DeliveryserviceZipcodeTtms = null;
+var DeliveryserviceStateTtms = null;
+var DeliveryserviceCountyTtms = null;
 
-var cdnCachegroupServers = {};
+var cdnCachegroupServers = null;
 
-var info; // info pane
+var zips = null;
+
+var info = null; // info pane
 
 var ColorBadnessDivisor = 1.0;
+
+//
+// utility funcs - no global data requirements
+//
 
 function ajax(url, callback){
   var xmlhttp = new XMLHttpRequest();
@@ -292,131 +298,131 @@ function getCachegroupMarkerPopup(cg) {
   return div
 }
 
-function addCache(cachegroupMarkerPopupContent, cacheName) {
-  var span = document.createElement("span");
-  span.style.color = cacheUnknownColor;
-  span.style.margin = "10px";
-  var txt = document.createTextNode(cacheName);
-  span.appendChild(txt);
-  cachegroupMarkerPopupContent.appendChild(span);
+// function addCache(cachegroupMarkerPopupContent, cacheName) {
+//   var span = document.createElement("span");
+//   span.style.color = cacheUnknownColor;
+//   span.style.margin = "10px";
+//   var txt = document.createTextNode(cacheName);
+//   span.appendChild(txt);
+//   cachegroupMarkerPopupContent.appendChild(span);
 
-  cachePopupElems[cacheName] = span;
-  return cachegroupMarkerPopupContent;
-}
+//   cachePopupElems[cacheName] = span;
+//   return cachegroupMarkerPopupContent;
+// }
 
-function getStates() {
-  topbar.innerHTML = "Loading CDN Server State";
-  ajax("/publish/CrStates", function(srvTxt) {
-    var rawStates = JSON.parse(srvTxt);
-    var cacheStates = rawStates["caches"];
-    for(var cacheName in cacheStates) {
-      if (!cacheStates.hasOwnProperty(cacheName)) {
-        continue; // skip prototype properties
-      }
+// function getStates() {
+//   topbar.innerHTML = "Loading CDN Server State";
+//   ajax("/publish/CrStates", function(srvTxt) {
+//     var rawStates = JSON.parse(srvTxt);
+//     var cacheStates = rawStates["caches"];
+//     for(var cacheName in cacheStates) {
+//       if (!cacheStates.hasOwnProperty(cacheName)) {
+//         continue; // skip prototype properties
+//       }
 
-      var cacheElem = cachePopupElems[cacheName];
-      if(typeof cacheElem == "undefined") {
-        // console.log("ERROR: cache " + cacheName + " has no element!"); // DEBUG
-        continue
-      }
-      var available = cacheStates[cacheName].isAvailable;
-      if(available) {
-        cacheElem.style.color = cacheAvailableColor;
-        cacheElem.style.fontWeight = 'normal';
-      } else {
-        /* console.log("cache " + cacheName + " is " + available); */
-        cacheElem.style.color = cacheUnavailableColor;
-        cacheElem.style.fontWeight = 'bold';
-      }
-    }
-    getCRConfigs(cdns);
-  })
-}
+//       var cacheElem = cachePopupElems[cacheName];
+//       if(typeof cacheElem == "undefined") {
+//         // console.log("ERROR: cache " + cacheName + " has no element!"); // DEBUG
+//         continue
+//       }
+//       var available = cacheStates[cacheName].isAvailable;
+//       if(available) {
+//         cacheElem.style.color = cacheAvailableColor;
+//         cacheElem.style.fontWeight = 'normal';
+//       } else {
+//         /* console.log("cache " + cacheName + " is " + available); */
+//         cacheElem.style.color = cacheUnavailableColor;
+//         cacheElem.style.fontWeight = 'bold';
+//       }
+//     }
+//     getCRConfigs(cdns);
+//   })
+// }
 
-function getCRConfigs(cdns) {
-  if(cdns.length == 0) {
-    getDeliveryServicesState();
-    return
-  }
-  var cdn = cdns[0];
-  if(cdn.name == 'ALL') {
-    getCRConfigs(cdns.slice(1));
-    return;
-  }
-  topbar.innerHTML = "Loading CDN Config";
-  ajax('/CRConfig-Snapshots/' + cdn.name + '/CRConfig.json', function(srvTxt) {
-    var crconfig = JSON.parse(srvTxt);
-    crconfigs[cdn.name] = crconfig;
-    addDeliveryServiceServers(crconfig);
-    getCRConfigs(cdns.slice(1));
-  })
-}
+// function getCRConfigs(cdns) {
+//   if(cdns.length == 0) {
+//     getDeliveryServicesState();
+//     return
+//   }
+//   var cdn = cdns[0];
+//   if(cdn.name == 'ALL') {
+//     getCRConfigs(cdns.slice(1));
+//     return;
+//   }
+//   topbar.innerHTML = "Loading CDN Config";
+//   ajax('/CRConfig-Snapshots/' + cdn.name + '/CRConfig.json', function(srvTxt) {
+//     var crconfig = JSON.parse(srvTxt);
+//     crconfigs[cdn.name] = crconfig;
+//     addDeliveryServiceServers(crconfig);
+//     getCRConfigs(cdns.slice(1));
+//   })
+// }
 
-function addDeliveryServiceServers(crconfig) {
-  var servers = crconfig["contentServers"];
-  for(var server in servers) {
-    if (!servers.hasOwnProperty(server)) {
-      continue; // skip prototype properties
-    }
-    deliveryServices = servers[server].deliveryServices;
-    cachegroup = servers[server].cacheGroup
-    for(var deliveryService in deliveryServices) {
-      if(!deliveryServices.hasOwnProperty(deliveryService)) {
-        continue; // skip prototype properties
-      }
-      if(!deliveryServiceServers.hasOwnProperty(deliveryService)) {
-				deliveryServiceServers[deliveryService] = [];
-			}
-      deliveryServiceServers[deliveryService].push(server);
+// function addDeliveryServiceServers(crconfig) {
+//   var servers = crconfig["contentServers"];
+//   for(var server in servers) {
+//     if (!servers.hasOwnProperty(server)) {
+//       continue; // skip prototype properties
+//     }
+//     deliveryServices = servers[server].deliveryServices;
+//     cachegroup = servers[server].cacheGroup
+//     for(var deliveryService in deliveryServices) {
+//       if(!deliveryServices.hasOwnProperty(deliveryService)) {
+//         continue; // skip prototype properties
+//       }
+//       if(!deliveryServiceServers.hasOwnProperty(deliveryService)) {
+// 				deliveryServiceServers[deliveryService] = [];
+// 			}
+//       deliveryServiceServers[deliveryService].push(server);
 
-      if(!deliveryServicecachegroupServers.hasOwnProperty(deliveryService)) {
-        deliveryServiceCachegroupServers[deliveryService] = {};
-      }
-      if(!deliveryServiceCachegroupServers[deliveryService].hasOwnProperty(cachegroup)) {
-        deliveryServiceCachegroupServers[deliveryService][cachegroup] = [];
-      }
-      deliveryServiceCachegroupServers[deliveryService][cachegroup].push(server);
-    }
-  }
-}
+//       if(!deliveryServicecachegroupServers.hasOwnProperty(deliveryService)) {
+//         deliveryServiceCachegroupServers[deliveryService] = {};
+//       }
+//       if(!deliveryServiceCachegroupServers[deliveryService].hasOwnProperty(cachegroup)) {
+//         deliveryServiceCachegroupServers[deliveryService][cachegroup] = [];
+//       }
+//       deliveryServiceCachegroupServers[deliveryService][cachegroup].push(server);
+//     }
+//   }
+// }
 
-function getDeliveryServicesState() {
-  topbar.innerHTML = "Loading Deliveryservice State";
-  ajax("/publish/DsStats", function(srvTxt) {
-    var raw = JSON.parse(srvTxt);
-    deliveryServices = raw["deliveryService"];
+// function getDeliveryServicesState() {
+//   topbar.innerHTML = "Loading Deliveryservice State";
+//   ajax("/publish/DsStats", function(srvTxt) {
+//     var raw = JSON.parse(srvTxt);
+//     deliveryServices = raw["deliveryService"];
 
-    var lgDsNone = L.layerGroup();
-    deliveryServiceLayerGroups["None"] = lgDsNone;
-    overlayMapsDs["None"] = lgDsNone;
+//     var lgDsNone = L.layerGroup();
+//     deliveryServiceLayerGroups["None"] = lgDsNone;
+//     overlayMapsDs["None"] = lgDsNone;
 
-    for(var deliveryService in deliveryServices) {
-      deliveryServiceMarkers[deliveryService] = {};
+//     for(var deliveryService in deliveryServices) {
+//       deliveryServiceMarkers[deliveryService] = {};
 
-      var markers = [];
-      for(var j = 0; j < cachegroups.length; j++) {
-        var cg = cachegroups[j];
+//       var markers = [];
+//       for(var j = 0; j < cachegroups.length; j++) {
+//         var cg = cachegroups[j];
 
-        if(deliveryServiceCachegroupServers.hasOwnProperty(deliveryService) && deliveryServiceCachegroupServers[deliveryService].hasOwnProperty(cg.name)) {
-          var cgMarker = L.AwesomeMarkers.icon({
-            icon: 'coffee',
-            markerColor: 'blue',
-            html: deliveryServiceCachegroupServers[deliveryService][cg.name].length
-          });
-          var marker = L.marker([cg.latitude, cg.longitude], {icon: cgMarker});
-          var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
-          deliveryServiceMarkers[deliveryService][cg.name] = marker;
-          markers.push(marker)
-        }
-      }
-      var layerGroup = L.layerGroup(markers);
-      overlayMapsDs[deliveryService] = layerGroup
-      deliveryServiceLayerGroups[deliveryService] = layerGroup;
-    }
+//         if(deliveryServiceCachegroupServers.hasOwnProperty(deliveryService) && deliveryServiceCachegroupServers[deliveryService].hasOwnProperty(cg.name)) {
+//           var cgMarker = L.AwesomeMarkers.icon({
+//             icon: 'coffee',
+//             markerColor: 'blue',
+//             html: deliveryServiceCachegroupServers[deliveryService][cg.name].length
+//           });
+//           var marker = L.marker([cg.latitude, cg.longitude], {icon: cgMarker});
+//           var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
+//           deliveryServiceMarkers[deliveryService][cg.name] = marker;
+//           markers.push(marker)
+//         }
+//       }
+//       var layerGroup = L.layerGroup(markers);
+//       overlayMapsDs[deliveryService] = layerGroup
+//       deliveryServiceLayerGroups[deliveryService] = layerGroup;
+//     }
 
-    getRegions();
-  })
-}
+//     getRegions();
+//   })
+// }
 
 // normalizeTtmsRatio takes a TTMS ratio as returned by calcTtmsRatio (0.0-2.0+) and returns a number between 0.0 and 1.0 where 0.0 is bad and 1.0 is good.
 function normalizeTtmsRatio(d) {
@@ -501,7 +507,7 @@ var AverageFragmentLengthMS = 2000;
 // calcTtmsRatio returns a number between 0.0 and 2.0+ where 2.0+ is considered "perfect"
 function calcTtmsRatio(ttms) {
   if(typeof ttms == "undefined" || ttms == "") {
-      return -1 // TODO stop returning ideal ratios for missing data
+      return -1
   }
   if(ttms == 0.0) {
     ttms = 0.001;
@@ -509,8 +515,12 @@ function calcTtmsRatio(ttms) {
   return AverageFragmentLengthMS/ttms;
 }
 
-function getZipcodeTtms() {
+// requires: LatLonStats, ZipToStatename
+// sets: DeliveryserviceZipcodeTtms
+function calcZipcodeTtms() {
+  topbar.innerHTML = "Calculating Zipcode Statistics";
   var series = LatLonStats.results[0].series;
+  DeliveryserviceZipcodeTtms = {};
   for(var seriesi = 0; seriesi < series.length; seriesi++) {
     var serie = series[seriesi];
     if(serie.name != "ttms_data") {
@@ -520,7 +530,7 @@ function getZipcodeTtms() {
     var deliveryservice = serie.tags.deliveryservice;
     var stateName = ZipToStateName[zipcode];
     if(typeof stateName == "undefined" || stateName == "") {
-			console.log("ZipToStateName[" + zipcode + "] undefined!");
+      console.log("ZipToStateName[" + zipcode + "] undefined!");
       continue;
     }
 
@@ -541,10 +551,14 @@ function getZipcodeTtms() {
   }
 }
 
-function getStateAndCountyTtms() {
+// requires: DeliveryserviceZipcodeTtms
+// sets: DeliveryServiceStateTtms, DeliveryserviceCountyTtms
+function calcStateAndCountyTtms() {
+  topbar.innerHTML = "Calculating State and County Statistics";
   var deliveryserviceStateTtmses = {};
   var deliveryserviceCountyTtmses = {};
-
+  DeliveryserviceStateTtms = {};
+  DeliveryserviceCountyTtms = {};
   for(var deliveryservice in DeliveryserviceZipcodeTtms) {
     var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
     if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
@@ -644,7 +658,7 @@ function onLayerAdd(e){
 function onOverlayAdd(e){
   if(typeof e.layer.regionType != "undefined") {
     CurrentRegionType = e.layer.regionType;
-    if(typeof info != "undefined") {
+    if(info) {
       info.update();
     }
   }
@@ -670,13 +684,17 @@ function highlightFeature(e) {
     //     layer.bringToFront();
     // }
 
-  info.update(layer.feature.properties);
+  if(info) {
+    info.update(layer.feature.properties);
+  }
 }
 
 function resetHighlight(e) {
   // geojson.resetStyle(e.target);
 
-  info.update();
+  if(info) {
+    info.update();
+  }
 }
 
 function onEachFeature(feature, layer) {
@@ -697,10 +715,14 @@ function reloadStatsStyles() {
   }
 }
 
+// requires: DeliveryserviceStateTtms, USStatesGeoJSON, DeliveryserviceCountyTtms
+// sets: overlayMapsStats
 function calcStateStats() {
-  topbar.innerHTML = "Calculating US State Stats";
+  topbar.innerHTML = "Creating Statistics Map Layers";
   var lgStatsNone = L.layerGroup();
   lgStatsNone.regionType = "";
+
+  overlayMapsStats = {};
   overlayMapsStats["None"] = lgStatsNone
 
   var initialDeliveryServiceType =  "VOD"
@@ -800,34 +822,35 @@ function calcStateStats() {
 }
 
 function getLatlonStats() {
-  topbar.innerHTML = "Loading Location Stats";
   // var params = 'db=' + encodeURIComponent('latlon_stats') + "&q=" + encodeURIComponent('select mean(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)');
   // ajax(InfluxURL+"/query?"+params, function(srvTxt) {
   ajax('/query', function(srvTxt) {
     LatLonStats = JSON.parse(srvTxt);
-    if(typeof LatLonStats.results[0].series != "undefined") {
-      getZipcodeTtms();
-      getStateAndCountyTtms();
-      calcStateStats();
-    } else {
+    if(typeof LatLonStats.results[0].series == "undefined") {
+      LatLonStats = undefined;
       console.log("Influx returned no series!")
       topbar.innerHTML = "Failed To Load Location Stats (try refreshing the page)";
     }
+    console.log("Got LatLonStats");
+    tryCalcAll();
   })
 }
 
-function calcCachegroupUSStates() {
-  for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
-    var cachegroup = cachegroups[cachegroupI];
-    var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
-    for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
-      var usState = USStatesGeoJSON.features[usstateI];
-      if(GeoJSONLatLonInFeature(cachegroupLonLat, usState)) {
-        CachegroupUSStates[cachegroup.name] = usState.properties.NAME;
-      }
-    }
-  }
-}
+// need: cachegroups, USStatesGeoJSON
+// sets: CachegroupUSStates
+// function calcCachegroupUSStates() {
+//   topbar.innerHTML = "Calculating US State Cachegroups";
+//   for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
+//     var cachegroup = cachegroups[cachegroupI];
+//     var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
+//     for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
+//       var usState = USStatesGeoJSON.features[usstateI];
+//       if(GeoJSONLatLonInFeature(cachegroupLonLat, usState)) {
+//         CachegroupUSStates[cachegroup.name] = usState.properties.NAME;
+//       }
+//     }
+//   }
+// }
 
 
 // from https://stackoverflow.com/questions/19974619/capitalize-first-letter-lowercase-the-rest-with-exceptions
@@ -842,55 +865,64 @@ function countyKeyNameStrs(state, county) {
 	return state + ", " + toTitleCase(county);
 }
 
-function calcCachegroupUSCounties() {
-  for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
-    var cachegroup = cachegroups[cachegroupI];
-    var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
-    for(var countyI = 0; countyI < USCountiesGeoJSON.features.length; countyI++) {
-      var county = USCountiesGeoJSON.features[countyI];
-      if(GeoJSONLatLonInFeature(cachegroupLonLat, county)) {
-        CachegroupUSCounties[cachegroup.name] = countyKeyNameGeoJSON(county);
-      }
-    }
-  }
-}
+// need: cachegroups, USCountiesGeoJSON
+// sets: CachegroupUSCounties
+// function calcCachegroupUSCounties() {
+//   topbar.innerHTML = "Calculating US County Cachegroups";
+//   for(var cachegroupI = 0; cachegroupI < cachegroups.length; cachegroupI++) {
+//     var cachegroup = cachegroups[cachegroupI];
+//     var cachegroupLonLat = [cachegroup.longitude, cachegroup.latitude];
+//     for(var countyI = 0; countyI < USCountiesGeoJSON.features.length; countyI++) {
+//       var county = USCountiesGeoJSON.features[countyI];
+//       if(GeoJSONLatLonInFeature(cachegroupLonLat, county)) {
+//         CachegroupUSCounties[cachegroup.name] = countyKeyNameGeoJSON(county);
+//       }
+//     }
+//   }
+// }
 
 
 // TODO rename
 function getRegions() {
   topbar.innerHTML = "Loading US State Data";
   ajax("/us-states-geojson.min.json", function(srvTxt) {
-    topbar.innerHTML = "Parsing US State Data";
     USStatesGeoJSON = JSON.parse(srvTxt);
-    calcCachegroupUSStates();
-    getCounties();
+    console.log("Got USStatesGeoJSON");
+    tryCalcAll();
   })
 }
 
 function getCounties() {
-  topbar.innerHTML = "Loading US County Data";
   ajax("/us-counties-geojson.min.json", function(srvTxt) {
     USCountiesGeoJSON = JSON.parse(srvTxt);
-    calcCachegroupUSCounties();
-    getZipStates();
+    console.log("Got USCountiesGeoJSON");
+    tryCalcAll();
   })
 }
 
 
 function getZipStates() {
-  topbar.innerHTML = "Loading Zipcode Data";
+  topbar.innerHTML = "Loading Zipcode data";
   ajax("/us-state-county-zips.min.json", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
     zips = raw["result"];
-    for(var zipi = 0; zipi < zips.length; zipi++) {
-      var zip = zips[zipi];
-      ZipToStateName[zip.Zipcode] = zip.State;
-      ZipToStateCounty[zip.Zipcode] = countyKeyNameStrs(zip.State, zip.County);
-    }
-    getLatlonStats();
+    console.log("Got zips");
+    tryCalcAll();
   })
 }
 
+// need: zips
+// sets: ZipToStateName, ZipToStateCounty
+function calcZipStatesAndCounties() {
+  topbar.innerHTML = "Calculating US State and County Zipcodes";
+  ZipToStateName = {};
+  ZipToStateCounty = {};
+  for(var zipi = 0; zipi < zips.length; zipi++) {
+    var zip = zips[zipi];
+    ZipToStateName[zip.Zipcode] = zip.State;
+    ZipToStateCounty[zip.Zipcode] = countyKeyNameStrs(zip.State, zip.County);
+  }
+}
 
 // function hostnameFromFqdn(fqdn) {
 //   var dotPos = fqdn.indexOf(".");
@@ -901,25 +933,31 @@ function getZipStates() {
 //   return hostname;
 // }
 
-function addServerToMarker(server, cdnName) {
-  var cacheName = server.hostName;
-  var cgName = server.cachegroup;
-  var marker = cachegroupMarkers[cdnName][cgName];
-  if(typeof marker == "undefined") {
-    console.log("ERROR no cachegroup for " + cgName);
-    return;
-  }
-  var popup = marker.getPopup();
-  var popupContent = popup.getContent();
-  popupContent = addCache(popupContent, cacheName);
-  popup.setContent(popupContent); // TODO necessary?
-  popup.update(); // TODO update once per popup? Necessary?
-}
+// function addServerToMarker(server, cdnName) {
+//   var cacheName = server.hostName;
+//   var cgName = server.cachegroup;
+//   var marker = cachegroupMarkers[cdnName][cgName];
+//   if(typeof marker == "undefined") {
+//     console.log("ERROR no cachegroup for " + cgName);
+//     return;
+//   }
+//   var popup = marker.getPopup();
+//   var popupContent = popup.getContent();
+//   popupContent = addCache(popupContent, cacheName);
+//   popup.setContent(popupContent); // TODO necessary?
+//   popup.update(); // TODO update once per popup? Necessary?
+// }
 
+// requires: cdns, cachegroups, cdnCachegroupServers
+// sets: cachegroupMarkers, overlayMapsCdn
 function addCachegroupLayers() {
+  overlayMapsCdn = {};
+  var lgCdnNone = L.layerGroup();
+  overlayMapsCdn["None"] = lgCdnNone;
   for(var i = 0; i < cdns.length; i++) {
     var cdn = cdns[i];
-    cachegroupMarkers[cdn.name] = {};
+    overlayMapsCdn[cdn.name] = L.layerGroup();
+    // cachegroupMarkers[cdn.name] = {};
     for(var j = 0; j < cachegroups.length; j++) {
       var cg = cachegroups[j];
 
@@ -937,19 +975,25 @@ function addCachegroupLayers() {
       });
       var marker = L.marker([cg.latitude, cg.longitude], {icon: cgMarker});
       var popup = marker.bindPopup(getCachegroupMarkerPopup(cg));
-      cachegroupMarkers[cdn.name][cg.name] = marker;
-      cdnServerLayerGroups[cdn.name].addLayer(marker);
+      // cachegroupMarkers[cdn.name][cg.name] = marker;
       overlayMapsCdn[cdn.name].addLayer(marker);
     }
   }
 }
 
 function getServers() {
-  topbar.innerHTML = "Loading CDN Server Data";
   ajax("/api/1.2/servers.json", function(srvTxt) {
     var rawServers = JSON.parse(srvTxt);
     servers = rawServers["response"];
+    console.log("Got servers");
+    tryCalcAll();
+  })
+}
 
+// requires: servers, cachegroups
+// sets: cachegroupCaches, cdnCachegroupServers, cacheCachegroups, cachegroupCaches
+function parseServers() {
+    cdnCachegroupServers = {};
     if(!cdnCachegroupServers.hasOwnProperty("ALL")) {
         cdnCachegroupServers["ALL"] = {};
     }
@@ -977,20 +1021,15 @@ function getServers() {
       // addServerToMarker(s, cdnName);
       // addServerToMarker(s, "ALL");
 
-      cacheCachegroups[cacheName] = cgName;
-      if(typeof cachegroupCaches[cgName] == "undefined") {
-        cachegroupCaches[cgName] = [];
-      }
-      cachegroupCaches[cgName].push(cgName);
+      // cacheCachegroups[cacheName] = cgName;
+      // if(typeof cachegroupCaches[cgName] == "undefined") {
+      //   cachegroupCaches[cgName] = [];
+      // }
+      // cachegroupCaches[cgName].push(cgName);
     }
-    addCachegroupLayers();
-    getRegions();
-    // getStates()
-  })
 }
 
 function getCachegroups() {
-  topbar.innerHTML = "Loading Cachegroups";
   ajax("/api/1.2/cachegroups.json", function(cgTxt) {
     var rawCachegroups = JSON.parse(cgTxt);
     cachegroups = [];
@@ -1000,35 +1039,88 @@ function getCachegroups() {
         cachegroups.push(cachegroup);
       }
     }
-    getServers(); // TODO concurrently request with cachegroups
+    console.log("Got cachegroups");
+    tryCalcAll();
   })
 }
 
 function getCDNs() {
-  topbar.innerHTML = "Loading CDNs";
-
   ajax("/api/1.2/cdns.json", function(txt) {
     var raw = JSON.parse(txt);
     cdns = raw["response"];
-
-    var lgCdnNone = L.layerGroup();
-    cdnServerLayerGroups["None"] = lgCdnNone;
-    overlayMapsCdn["None"] = lgCdnNone;
-
-    for(var i = 0; i < cdns.length; i++) {
-      var cdn = cdns[i];
-			var lg = L.layerGroup();
-			cdnServerLayerGroups[cdn.name] = lg;
-			overlayMapsCdn[cdn.name] = lg
-		}
-		getCachegroups();
-	})
+    console.log("Got cdns");
+    tryCalcAll();
+  })
 }
 
 function init(tileUrl, influxUrl) {
   InfluxURL = influxUrl;
   toggleTop.checked = true;
   initMap(tileUrl);
+  getAll();
+}
+
+function getAll() {
+  topbar.innerHTML = "Loading Data";
   getCDNs();
-  // getRegions();
+  getCachegroups();
+  getServers();
+  getRegions();
+  getCounties();
+  getZipStates();
+  getLatlonStats();
+}
+
+var calculated = {};
+// tryCalcAll tries to calculate all data, checking if the necessary data has been fetched. This should be called at the end of every ajax request.
+function tryCalcAll() {
+  // console.log("tryCalcAll cachegroups " + typeof cachegroups + " servers " + typeof servers + " cdns " + typeof cdns + " cdnCachegroupServers " + typeof cdnCachegroupServers + " USStatesGeoJSON " + typeof USStatesGeoJSON + " USCountiesGeoJSON " + typeof USCountiesGeoJSON + " zips " + typeof zips + " LatLonStats " + typeof LatLonStats + " ZipToStateName " + typeof ZipToStateName + " DeliveryserviceZipcodeTtms " + typeof DeliveryserviceZipcodeTtms + " overlayMapsCdn " + typeof overlayMapsCdn + " DeliveryserviceCountyTtms " + typeof DeliveryserviceCountyTtms + " DeliveryserviceStateTtms " + typeof DeliveryserviceStateTtms);
+  if(!calculated["parseServers"] && cachegroups && servers) {
+    console.log("Calculating " + "parseServers");
+    parseServers();
+    calculated["parseServers"] = true;
+    tryCalcAll();
+  }
+  if(!calculated["addCachegroupLayers"] && cdns && cachegroups && cdnCachegroupServers) {
+    console.log("Calculating " + "addCachegroupLayers");
+    addCachegroupLayers();
+    calculated["addCachegroupLayers"] = true;
+    tryCalcAll();
+  }
+  // if(!calculated["calcCachegroupUSStates"] && cachegroups && USStatesGeoJSON) {
+  //   console.log("Calculating " + "calcCachegroupUSStates");
+  //   calcCachegroupUSStates();
+  //   calculated["calcCachegroupUSStates"] = true;
+  //   tryCalcAll();
+  // }
+  // if(!calculated["calcCachegroupUSCounties"] && cachegroups && USCountiesGeoJSON) {
+  //   console.log("Calculating " + "calcCachegroupUSCounties");
+  //   calcCachegroupUSCounties();
+  //   calculated["calcCachegroupUSCounties"] = true;
+  //   tryCalcAll();
+  // }
+  if(!calculated["calcZipStatesAndCounties"] && zips) {
+    console.log("Calculating " + "calcZipStatesAndCounties");
+    calcZipStatesAndCounties();
+    calculated["calcZipStatesAndCounties"] = true;
+    tryCalcAll();
+  }
+  if(!calculated["calcZipcodeTtms"] && LatLonStats && ZipToStateName) {
+    console.log("Calculating " + "calcZipcodeTtms");
+    calcZipcodeTtms();
+    calculated["calcZipcodeTtms"] = true;
+    tryCalcAll();
+  }
+  if(!calculated["calcStateAndCountyTtms"] && DeliveryserviceZipcodeTtms) {
+    console.log("Calculating " + "calcStateAndCountyTtms");
+    calcStateAndCountyTtms();
+    calculated["calcStateAndCountyTtms"] = true;
+    tryCalcAll();
+  }
+  if(!calculated["calcStateStats"] && DeliveryserviceStateTtms && USStatesGeoJSON && USCountiesGeoJSON && DeliveryserviceCountyTtms && overlayMapsCdn) {
+    console.log("Calculating " + "calcStateStats");
+    calcStateStats();
+    calculated["calcStateStats"] = true;
+    tryCalcAll();
+  }
 }
