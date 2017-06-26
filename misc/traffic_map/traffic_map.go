@@ -578,7 +578,7 @@ func makeGzipHandler(fn http.HandlerFunc) http.HandlerFunc {
 
 func getHandleInflux(influxURL string) http.HandlerFunc {
 	client := http.Client{Timeout: 5 * time.Minute} // long timeout, because the influx query is large
-	params := fmt.Sprintf("db=%s&q=%s", url.QueryEscape("latlon_stats"), url.QueryEscape("select percentile(ttms, 95) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)"))
+	params := fmt.Sprintf("db=%s&q=%s", url.QueryEscape("latlon_stats"), url.QueryEscape("select percentile(ttms, 95), count(ttms) from ttms_data where time > now() - 24h group by postcode, deliveryservice, time(24h)"))
 	reqUrl := fmt.Sprintf("%s/query?%s", influxURL, params)
 	return makeCachedHandler(CacheDuration, ContentTypeJSON, func() ([]byte, error) {
 		resp, err := client.Get(reqUrl)

@@ -61,8 +61,11 @@ var LatLonStats = null;
 var overlayMapsStats = null;
 // var StatsTtmsStateLayers = {};
 var DeliveryserviceZipcodeTtms = null;
+var DeliveryserviceZipcodeTtmsCount = null;
 var DeliveryserviceStateTtms = null;
+var DeliveryserviceStateTtmsCount = null;
 var DeliveryserviceCountyTtms = null;
+var DeliveryserviceCountyTtmsCount = null;
 
 var cdnCachegroupServers = null;
 
@@ -257,6 +260,9 @@ function createInfo() {
     if(props) {
       if(props.ttmsRatio > 0.0) {
         this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + getGeoJSONPropertiesDisplayName(props) + '</b><br />' + props.ttmsRatio.toFixed(2) + '';
+        if(typeof props.ttmsCount != "undefined") { // Cyclomatic complexity? What's that?
+          this._div.innerHTML += ' <span style="float:right;">(' + props.ttmsCount.toFixed(0) + ' samples)</span>';
+        }
       } else {
         this._div.innerHTML = '<h4>Customer Experience Ratio</h4>' + '<b>' + getGeoJSONPropertiesDisplayName(props) + '</b><br />' + '<i>no recent customers</i>' + '';
       }
@@ -527,11 +533,12 @@ function calcTtmsRatio(ttms) {
 }
 
 // requires: LatLonStats, ZipToStatename
-// sets: DeliveryserviceZipcodeTtms
+// sets: DeliveryserviceZipcodeTtms, DeliveryserviceZipcodeTtmsCount
 function calcZipcodeTtms() {
   topbar.innerHTML = "Calculating Zipcode Statistics";
   var series = LatLonStats.results[0].series;
   DeliveryserviceZipcodeTtms = {};
+  DeliveryserviceZipcodeTtmsCount = {};
   for(var seriesi = 0; seriesi < series.length; seriesi++) {
     var serie = series[seriesi];
     if(serie.name != "ttms_data") {
@@ -546,6 +553,7 @@ function calcZipcodeTtms() {
     }
 
     var latestValue = -1;
+    var latestCount = 0;
     // TODO invert loop, break after find (last is latest)
     for(var valuesi = 0; valuesi < serie.values.length; valuesi++) {
       var value = serie.values[valuesi];
@@ -553,50 +561,66 @@ function calcZipcodeTtms() {
         continue;
       }
       latestValue = value[1];
+      latestCount = value[2];
     }
 
     if(typeof DeliveryserviceZipcodeTtms[deliveryservice] == "undefined") {
       DeliveryserviceZipcodeTtms[deliveryservice] = {};
+      DeliveryserviceZipcodeTtmsCount[deliveryservice] = {};
     }
     DeliveryserviceZipcodeTtms[deliveryservice][zipcode] = latestValue;
+    DeliveryserviceZipcodeTtmsCount[deliveryservice][zipcode] = latestCount;
   }
 }
 
-// requires: DeliveryserviceZipcodeTtms
-// sets: DeliveryServiceStateTtms, DeliveryserviceCountyTtms
+// requires: DeliveryserviceZipcodeTtms, DeliveryserviceZipcodeTtmsCount, ZipToStateName, ZipToStateCounty
+// sets: DeliveryServiceStateTtms, DeliveryServiceStateTtmsCount, DeliveryserviceCountyTtms, DeliveryserviceCountyTtmsCount
 function calcStateAndCountyTtms() {
   topbar.innerHTML = "Calculating State and County Statistics";
   var deliveryserviceStateTtmses = {};
+  var deliveryserviceStateTtmsesCount = {};
   var deliveryserviceCountyTtmses = {};
+  var deliveryserviceCountyTtmsesCount = {};
   DeliveryserviceStateTtms = {};
+  DeliveryserviceStateTtmsCount = {};
   DeliveryserviceCountyTtms = {};
+  DeliveryserviceCountyTtmsCount = {};
   for(var deliveryservice in DeliveryserviceZipcodeTtms) {
     var zipcodeTtms = DeliveryserviceZipcodeTtms[deliveryservice];
+    var zipcodeTtmsCount = DeliveryserviceZipcodeTtmsCount[deliveryservice];
     if(typeof deliveryserviceStateTtmses[deliveryservice] == "undefined") {
       deliveryserviceStateTtmses[deliveryservice] = {};
+      deliveryserviceStateTtmsesCount[deliveryservice] = {};
     }
     if(typeof deliveryserviceCountyTtmses[deliveryservice] == "undefined") {
       deliveryserviceCountyTtmses[deliveryservice] = {};
+      deliveryserviceCountyTtmsesCount[deliveryservice] = {};
     }
 
     for(var zipcode in zipcodeTtms) {
       var ttms = zipcodeTtms[zipcode];
+      var ttmsCount = zipcodeTtmsCount[zipcode];
       var stateName = ZipToStateName[zipcode];
       var countyName = ZipToStateCounty[zipcode];
       if(typeof deliveryserviceStateTtmses[deliveryservice][stateName] == "undefined") {
         deliveryserviceStateTtmses[deliveryservice][stateName] = [];
+        deliveryserviceStateTtmsesCount[deliveryservice][stateName] = [];
       }
       deliveryserviceStateTtmses[deliveryservice][stateName].push(ttms);
+      deliveryserviceStateTtmsesCount[deliveryservice][stateName].push(ttmsCount);
 
       if(typeof deliveryserviceCountyTtmses[deliveryservice][countyName] == "undefined") {
         deliveryserviceCountyTtmses[deliveryservice][countyName] = [];
+        deliveryserviceCountyTtmsesCount[deliveryservice][countyName] = [];
       }
       deliveryserviceCountyTtmses[deliveryservice][countyName].push(ttms);
+      deliveryserviceCountyTtmsesCount[deliveryservice][countyName].push(ttmsCount);
     }
 
     for(var deliveryservice in deliveryserviceStateTtmses) {
       if(typeof DeliveryserviceStateTtms[deliveryservice] == "undefined") {
         DeliveryserviceStateTtms[deliveryservice] = {};
+        DeliveryserviceStateTtmsCount[deliveryservice] = {};
       }
       for(var state in deliveryserviceStateTtmses[deliveryservice]) {
         var stateTtms = deliveryserviceStateTtmses[deliveryservice][state];
@@ -606,12 +630,20 @@ function calcStateAndCountyTtms() {
         }
         var avg = sum/stateTtms.length;
         DeliveryserviceStateTtms[deliveryservice][state] = avg;
+
+        var stateTtmsCount = deliveryserviceStateTtmsesCount[deliveryservice][state];
+        var sum = 0;
+        for( var ttmsi = 0; ttmsi < stateTtmsCount.length; ttmsi++ ){
+          sum += stateTtmsCount[ttmsi];
+        }
+        DeliveryserviceStateTtmsCount[deliveryservice][state] = sum;
       }
     }
 
     for(var deliveryservice in deliveryserviceCountyTtmses) {
       if(typeof DeliveryserviceCountyTtms[deliveryservice] == "undefined") {
         DeliveryserviceCountyTtms[deliveryservice] = {};
+        DeliveryserviceCountyTtmsCount[deliveryservice] = {};
       }
       for(var county in deliveryserviceCountyTtmses[deliveryservice]) {
         var countyTtms = deliveryserviceCountyTtmses[deliveryservice][county];
@@ -621,6 +653,13 @@ function calcStateAndCountyTtms() {
         }
         var avg = sum/countyTtms.length;
         DeliveryserviceCountyTtms[deliveryservice][county] = avg;
+
+        var countyTtmsCount = deliveryserviceCountyTtmsesCount[deliveryservice][county];
+        var sum = 0;
+        for( var ttmsi = 0; ttmsi < countyTtmsCount.length; ttmsi++ ){
+          sum += countyTtmsCount[ttmsi];
+        }
+        DeliveryserviceCountyTtmsCount[deliveryservice][county] = sum;
       }
     }
   }
@@ -760,6 +799,7 @@ function calcStateStats() {
 
     overlayMapsStats[stateTtmsLayerName] = lg
     var stateTtms = DeliveryserviceStateTtms[deliveryservice];
+    var stateTtmsCount = DeliveryserviceStateTtmsCount[deliveryservice];
     for(var usstateI = 0; usstateI < USStatesGeoJSON.features.length; usstateI++) {
       var usState = USStatesGeoJSON.features[usstateI];
 
@@ -770,6 +810,7 @@ function calcStateStats() {
       var usStateName = usState.properties.NAME;
 
       usState.properties.ttmsRatio = calcTtmsRatio(stateTtms[usStateName]);
+      usState.properties.ttmsCount = stateTtmsCount[usStateName];
       if (usState.properties.ttmsRatio == -1) {
         continue; // don't draw regions with no data - comment this to draw dataless counties as grey, giving the illusion of a complete map overlay
       }
@@ -788,6 +829,7 @@ function calcStateStats() {
     }
 
     var countyTtms = DeliveryserviceCountyTtms[deliveryservice];
+    var countyTtmsCount = DeliveryserviceCountyTtmsCount[deliveryservice];
     for(var countyI = 0; countyI < USCountiesGeoJSON.features.length; countyI++) {
       var county = USCountiesGeoJSON.features[countyI];
 
@@ -798,6 +840,7 @@ function calcStateStats() {
       var countyName = countyKeyNameGeoJSON(county);
 
       county.properties.ttmsRatio = calcTtmsRatio(countyTtms[countyName]);
+      county.properties.ttmsCount = countyTtmsCount[countyName];
       if (county.properties.ttmsRatio == -1) {
         continue; // don't draw regions with no data - comment this to draw dataless counties as grey, giving the illusion of a complete map overlay
       }
@@ -1122,13 +1165,13 @@ function tryCalcAll() {
     calculated["calcZipcodeTtms"] = true;
     tryCalcAll();
   }
-  if(!calculated["calcStateAndCountyTtms"] && DeliveryserviceZipcodeTtms) {
+  if(!calculated["calcStateAndCountyTtms"] && DeliveryserviceZipcodeTtms && ZipToStateName && ZipToStateCounty) {
     console.log("Calculating " + "calcStateAndCountyTtms");
     calcStateAndCountyTtms();
     calculated["calcStateAndCountyTtms"] = true;
     tryCalcAll();
   }
-  if(!calculated["calcStateStats"] && DeliveryserviceStateTtms && USStatesGeoJSON && USCountiesGeoJSON && DeliveryserviceCountyTtms && overlayMapsCdn) {
+  if(!calculated["calcStateStats"] && DeliveryserviceStateTtms && DeliveryserviceStateTtmsCount && USStatesGeoJSON && USCountiesGeoJSON && DeliveryserviceCountyTtms && DeliveryserviceCountyTtmsCount && overlayMapsCdn) {
     console.log("Calculating " + "calcStateStats");
     calcStateStats();
     calculated["calcStateStats"] = true;
