@@ -431,6 +431,7 @@ function normalizeTtmsRatio(d) {
   }
   var oldD = d;
 
+  d = d * ColorBadnessDivisor;
   d = d - 1.0; // This makes the TtmsRatio of 1 red; to make 0 red and 1 yellow, remove this block
   if(d < 0.001) {
     d = 0.001;
@@ -438,7 +439,6 @@ function normalizeTtmsRatio(d) {
   if(d > 0.999) {
     d = 0.999;
   }
-  d = d * ColorBadnessDivisor;
   d = 1.0 - d;
   return d;
 
@@ -913,7 +913,7 @@ function getCounties() {
 
 
 function getZipStates() {
-  topbar.innerHTML = "Loading Zipcode data";
+  topbar.innerHTML = "Loading Zipcode Data";
   ajax("/us-state-county-zips.min.json", function(srvTxt) {
     var raw = JSON.parse(srvTxt);
     zips = raw["result"];
