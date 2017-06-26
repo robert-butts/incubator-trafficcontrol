@@ -140,7 +140,7 @@ function pointInPolygon(point, vs) {
 // TODO abstract duplicate code
 function reloadLegendStyle() {
   var span = document.getElementById("legendSpan")
-  grades = [2.0, 1.75, 1.5, 1.0, 0.5, 0.0]
+  grades = [2.0, 1.75, 1.5, 1.25, 1.0];
   labels = [];
 
   // loop through our density intervals and generate a label with a colored square for each interval
@@ -158,7 +158,7 @@ function createLegend() {
   legend.onAdd = function (map) {
     var div = L.DomUtil.create('div', 'info legend');
     div.id = "legendDiv";
-    grades = [2.0, 1.75, 1.5, 1.0, 0.5, 0.0]
+    grades = [2.0, 1.75, 1.5, 1.25, 1.0];
     labels = [];
 
     var legendSpan = document.createElement('span');
@@ -431,17 +431,28 @@ function normalizeTtmsRatio(d) {
   }
   var oldD = d;
 
+  d = d - 1.0; // This makes the TtmsRatio of 1 red; to make 0 red and 1 yellow, remove this block
+  if(d < 0.001) {
+    d = 0.001;
+  }
+  if(d > 0.999) {
+    d = 0.999;
+  }
   d = d * ColorBadnessDivisor;
-  var badnessChange = d;
-  if(d > 2.0) {
-    d = 2.0;
-  }
- d = 1.0 - (d/2.0);
- if(d < 0.0001) {
-    d = 0.0001;
-  }
-  // console.log("normalizeTtmsRatio got " + oldD + " adjusted to " + badnessChange + " returning " + d);
+  d = 1.0 - d;
   return d;
+
+ //  d = d * ColorBadnessDivisor;
+ //  var badnessChange = d;
+ //  if(d > 2.0) {
+ //    d = 2.0;
+ //  }
+ // d = 1.0 - (d/2.0);
+ // if(d < 0.0001) {
+ //    d = 0.0001;
+ //  }
+ //  // console.log("normalizeTtmsRatio got " + oldD + " adjusted to " + badnessChange + " returning " + d);
+ //  return d;
 }
 
 // 0.0 < d < 1.0
