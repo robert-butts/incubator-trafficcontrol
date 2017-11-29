@@ -14,8 +14,18 @@
 # limitations under the License.
 #
 
+GO_VERSION='go1.8.3'
+
+if go version; then
+    EXISTING_GO_VERSION=$(go version | cut -d' ' -f3)
+    if [[ "$EXISTING_GO_VERSION" = "$GO_VERSION" ]]; then
+        echo "$GO_VERSION already installed"
+        exit 0
+    fi
+fi
+
 GO_DOWNLOADS_URL=https://storage.googleapis.com/golang
-GO_TARBALL_VERSION=go1.8.3.linux-amd64.tar.gz
+GO_TARBALL_VERSION=${GO_VERSION}.linux-amd64.tar.gz
 GO_TARBALL_URL=$GO_DOWNLOADS_URL/$GO_TARBALL_VERSION
 
 GO_TARBALL_VERSION_SHA_FILE=$GO_TARBALL_VERSION.sha256

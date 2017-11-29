@@ -16,7 +16,13 @@
 
 GO_BINARY=/usr/local/go/bin/go
 
+if goose; then
+    echo "Goose already installed"
+    exit 0
+fi
+
 echo "Now installing goose"
+
 export GOPATH=/opt/traffic_ops/go
 mkdir -p $GOPATH
 
