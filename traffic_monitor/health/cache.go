@@ -21,8 +21,6 @@ package health
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/apache/incubator-trafficcontrol/lib/go-log"
@@ -40,48 +38,16 @@ func GetVitals(newResult *cache.Result, prevResult *cache.Result, mc *tc.Traffic
 		log.Errorf("cache_health.GetVitals() called with an errored Result!")
 		return
 	}
-	// proc.loadavg -- we're using the 1 minute average (!?)
-	// value looks like: "0.20 0.07 0.07 1/967 29536" (without the quotes)
-	loadAverages := strings.Fields(newResult.Astats.System.ProcLoadavg)
-	if len(loadAverages) > 0 {
-		oneMinAvg, err := strconv.ParseFloat(loadAverages[0], 64)
-		if err != nil {
-			setErr(newResult, fmt.Errorf("Error converting load average string '%s': %v", newResult.Astats.System.ProcLoadavg, err))
-			return
-		}
-		newResult.Vitals.LoadAvg = oneMinAvg
-	} else {
-		setErr(newResult, fmt.Errorf("Can't make sense of '%s' as a load average for %s", newResult.Astats.System.ProcLoadavg, newResult.ID))
-		return
-	}
 
-	// proc.net.dev -- need to compare to prevSample
-	// value looks like
-	// "bond0:8495786321839 31960528603    0    0    0     0          0   2349716 143283576747316 101104535041    0    0    0     0       0          0"
-	// (without the quotes)
-	parts := strings.Split(newResult.Astats.System.ProcNetDev, ":")
-	if len(parts) > 1 {
-		numbers := strings.Fields(parts[1])
-		var err error
-		newResult.Vitals.BytesOut, err = strconv.ParseInt(numbers[8], 10, 64)
-		if err != nil {
-			setErr(newResult, fmt.Errorf("Error converting BytesOut from procnetdev: %v", err))
-			return
-		}
-		newResult.Vitals.BytesIn, err = strconv.ParseInt(numbers[0], 10, 64)
-		if err != nil {
-			setErr(newResult, fmt.Errorf("Error converting BytesIn from procnetdev: %v", err))
-			return
-		}
-		if prevResult != nil && prevResult.Vitals.BytesOut != 0 {
-			elapsedTimeInSecs := float64(newResult.Time.UnixNano()-prevResult.Time.UnixNano()) / 1000000000
-			newResult.Vitals.KbpsOut = int64(float64(((newResult.Vitals.BytesOut - prevResult.Vitals.BytesOut) * 8 / 1000)) / elapsedTimeInSecs)
-		} else {
-			// log.Infoln("prevResult == nil for id " + newResult.Id + ". Hope we're just starting up?")
-		}
+	newResult.Vitals.LoadAvg = newResult.Astats.System.ProcLoadavg.CPU1m
+	newResult.Vitals.BytesOut = int64(newResult.Astats.System.ProcNetDev.SndBytes)
+	newResult.Vitals.BytesIn = int64(newResult.Astats.System.ProcNetDev.RcvBytes)
+
+	if prevResult != nil && prevResult.Vitals.BytesOut != 0 {
+		elapsedTimeInSecs := float64(newResult.Time.UnixNano()-prevResult.Time.UnixNano()) / 1000000000
+		newResult.Vitals.KbpsOut = int64(float64(((newResult.Vitals.BytesOut - prevResult.Vitals.BytesOut) * 8 / 1000)) / elapsedTimeInSecs)
 	} else {
-		setErr(newResult, fmt.Errorf("Error parsing procnetdev: no fields found"))
-		return
+		// log.Infoln("prevResult == nil for id " + newResult.Id + ". Hope we're just starting up?")
 	}
 
 	// inf.speed -- value looks like "10000" (without the quotes) so it is in Mbps.

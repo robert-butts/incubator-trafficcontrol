@@ -21,11 +21,10 @@ package cache
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -38,10 +37,9 @@ import (
 
 // Handler is a cache handler, which fulfills the common/handler `Handler` interface.
 type Handler struct {
-	resultChan         chan Result
-	Notify             int
-	ToData             *todata.TODataThreadsafe
-	MultipleSpaceRegex *regexp.Regexp
+	resultChan chan Result
+	Notify     int
+	ToData     *todata.TODataThreadsafe
 }
 
 func (h Handler) ResultChan() <-chan Result {
@@ -50,12 +48,12 @@ func (h Handler) ResultChan() <-chan Result {
 
 // NewHandler returns a new cache handler. Note this handler does NOT precomputes stat data before calling ResultChan, and Result.Precomputed will be nil
 func NewHandler() Handler {
-	return Handler{resultChan: make(chan Result), MultipleSpaceRegex: regexp.MustCompile(" +")}
+	return Handler{resultChan: make(chan Result)}
 }
 
 // NewPrecomputeHandler constructs a new cache Handler, which precomputes stat data and populates result.Precomputed before passing to ResultChan.
 func NewPrecomputeHandler(toData todata.TODataThreadsafe) Handler {
-	return Handler{resultChan: make(chan Result), MultipleSpaceRegex: regexp.MustCompile(" +"), ToData: &toData}
+	return Handler{resultChan: make(chan Result), ToData: &toData}
 }
 
 // Precompute returns whether this handler precomputes data before passing the result to the ResultChan
@@ -311,7 +309,16 @@ func (handler Handler) Handle(id string, r io.Reader, reqTime time.Duration, req
 		return
 	}
 
-	if result.Astats.System.ProcNetDev == "" {
+	var err error
+	result.Astats.System, err = parseATSSystemStats(result.Astats)
+	if err != nil {
+		log.Warnf("%s system stats error '%v'\n", id, err)
+		result.Error = errors.New("parsing system stats: " + err.Error())
+		handler.resultChan <- result
+		return
+	}
+
+	if result.Astats.System.ProcNetDev == (AstatsSystemProcNetDev{}) {
 		log.Warnf("addkbps %s procnetdev empty\n", id)
 	}
 
@@ -333,29 +340,29 @@ func (handler Handler) Handle(id string, r io.Reader, reqTime time.Duration, req
 	handler.resultChan <- result
 }
 
-// outBytes takes the proc.net.dev string, and the interface name, and returns the bytes field
-func outBytes(procNetDev, iface string, multipleSpaceRegex *regexp.Regexp) (int64, error) {
-	if procNetDev == "" {
-		return 0, fmt.Errorf("procNetDev empty")
-	}
-	if iface == "" {
-		return 0, fmt.Errorf("iface empty")
-	}
-	ifacePos := strings.Index(procNetDev, iface)
-	if ifacePos == -1 {
-		return 0, fmt.Errorf("interface '%s' not found in proc.net.dev '%s'", iface, procNetDev)
-	}
+// parseATSSystemStats looks for System stats in the ATS key-value stats, and populates the Astats.System data with them. This only parses System stats, and ignores all other ATS stats.
+func parseATSSystemStats(astats Astats) (AstatsSystem, error) {
+	systemPrefix := "plugin.system_stats."
+	system := astats.System
+	for stat, ival := range astats.Ats {
+		if !strings.HasPrefix(stat, systemPrefix) {
+			continue
+		}
+		fval, ok := ival.(float64)
+		if !ok {
+			log.Infoln("skipping non-numeric stat '" + stat + "'")
+			continue
+		}
+		val := uint64(fval)
+		statParts := strings.Split(stat[len(systemPrefix):], ".")
 
-	procNetDevIfaceBytes := procNetDev[ifacePos+len(iface)+1:]
-	procNetDevIfaceBytes = strings.TrimLeft(procNetDevIfaceBytes, " ")
-	procNetDevIfaceBytes = multipleSpaceRegex.ReplaceAllLiteralString(procNetDevIfaceBytes, " ")
-	procNetDevIfaceBytesArr := strings.Split(procNetDevIfaceBytes, " ") // this could be made faster with a custom function (DFA?) that splits and ignores duplicate spaces at the same time
-	if len(procNetDevIfaceBytesArr) < 10 {
-		return 0, fmt.Errorf("proc.net.dev iface '%v' unknown format '%s'", iface, procNetDev)
+		var err error
+		system, err = processStatPluginSystemStats(system, statParts, val)
+		if err != nil {
+			return system, err
+		}
 	}
-	procNetDevIfaceBytes = procNetDevIfaceBytesArr[8]
-
-	return strconv.ParseInt(procNetDevIfaceBytes, 10, 64)
+	return system, nil
 }
 
 // precompute does the calculations which are possible with only this one cache result.
@@ -364,20 +371,23 @@ func (handler Handler) precompute(result Result) Result {
 	todata := handler.ToData.Get()
 	stats := map[tc.DeliveryServiceName]dsdata.Stat{}
 
-	var err error
-	if result.PrecomputedData.OutBytes, err = outBytes(result.Astats.System.ProcNetDev, result.Astats.System.InfName, handler.MultipleSpaceRegex); err != nil {
-		result.PrecomputedData.OutBytes = 0
-		log.Errorf("addkbps %s handle precomputing outbytes '%v'\n", result.ID, err)
-	}
+	result.PrecomputedData.OutBytes = int64(result.Astats.System.ProcNetDev.SndBytes)
 
 	kbpsInMbps := int64(1000)
 	result.PrecomputedData.MaxKbps = int64(result.Astats.System.InfSpeed) * kbpsInMbps
 
-	for stat, value := range result.Astats.Ats {
+	for stat, ival := range result.Astats.Ats {
+		fval, ok := ival.(float64)
+		if !ok {
+			log.Infoln("skipping non-numeric stat '" + stat + "'")
+			continue
+		}
+		val := uint64(fval)
+
 		var err error
-		stats, err = processStat(result.ID, stats, todata, stat, value, result.Time)
+		stats, result.Astats.System, err = processStat(result.ID, stats, result.Astats.System, todata, stat, val, result.Time)
 		if err != nil && err != dsdata.ErrNotProcessedStat {
-			log.Infof("precomputing cache %v stat %v value %v error %v", result.ID, stat, value, err)
+			log.Infof("precomputing cache %v stat %v value %v error %v", result.ID, stat, val, err)
 			result.PrecomputedData.Errors = append(result.PrecomputedData.Errors, err)
 		}
 	}
@@ -385,38 +395,139 @@ func (handler Handler) precompute(result Result) Result {
 	return result
 }
 
-// processStat and its subsidiary functions act as a State Machine, flowing the stat thru states for each "." component of the stat name
-func processStat(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.Stat, toData todata.TOData, stat string, value interface{}, timeReceived time.Time) (map[tc.DeliveryServiceName]dsdata.Stat, error) {
+// processStat and its subsidiary functions act as a State Machine, flowing the stat thru states for each "." component of the stat name. It also parses System stats which are directly included in the "ats" key, rather than a separate "system" key (We have two Astats formats). If the system stats are in the "ats" key, this parses them, inserts them into the given AstatsSystem, and returns the modified AstatsSystem.
+func processStat(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.Stat, system AstatsSystem, toData todata.TOData, stat string, val uint64, timeReceived time.Time) (map[tc.DeliveryServiceName]dsdata.Stat, AstatsSystem, error) {
 	parts := strings.Split(stat, ".")
 	if len(parts) < 1 {
-		return stats, fmt.Errorf("stat has no initial part")
+		return stats, system, fmt.Errorf("stat has no initial part")
 	}
 
 	switch parts[0] {
 	case "plugin":
-		return processStatPlugin(server, stats, toData, stat, parts[1:], value, timeReceived)
+		return processStatPlugin(server, stats, system, toData, stat, parts[1:], val, timeReceived)
 	case "proxy":
-		return stats, dsdata.ErrNotProcessedStat
+		return stats, system, dsdata.ErrNotProcessedStat
 	case "server":
-		return stats, dsdata.ErrNotProcessedStat
+		return stats, system, dsdata.ErrNotProcessedStat
 	default:
-		return stats, fmt.Errorf("stat '%s' has unknown initial part '%s'", stat, parts[0])
+		return stats, system, fmt.Errorf("stat '%s' has unknown initial part '%s'", stat, parts[0])
 	}
 }
 
-func processStatPlugin(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.Stat, toData todata.TOData, stat string, statParts []string, value interface{}, timeReceived time.Time) (map[tc.DeliveryServiceName]dsdata.Stat, error) {
+func processStatPlugin(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.Stat, system AstatsSystem, toData todata.TOData, stat string, statParts []string, val uint64, timeReceived time.Time) (map[tc.DeliveryServiceName]dsdata.Stat, AstatsSystem, error) {
 	if len(statParts) < 1 {
-		return stats, fmt.Errorf("stat has no plugin part")
+		return stats, system, errors.New("stat has no plugin part")
 	}
 	switch statParts[0] {
 	case "remap_stats":
-		return processStatPluginRemapStats(server, stats, toData, stat, statParts[1:], value, timeReceived)
+		stats, err := processStatPluginRemapStats(server, stats, toData, stat, statParts[1:], val, timeReceived)
+		return stats, system, err
+	// case "system_stats":
+	// 	system, err := processStatPluginSystemStats(system, statParts[1:], val)
+	// 	return stats, system, err
 	default:
-		return stats, fmt.Errorf("stat has unknown plugin part '%s'", statParts[0])
+		return stats, system, fmt.Errorf("stat has unknown plugin part '%s'", statParts[0])
 	}
 }
 
-func processStatPluginRemapStats(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.Stat, toData todata.TOData, stat string, statParts []string, value interface{}, timeReceived time.Time) (map[tc.DeliveryServiceName]dsdata.Stat, error) {
+func processStatPluginSystemStats(system AstatsSystem, statParts []string, val uint64) (AstatsSystem, error) {
+	if len(statParts) < 1 {
+		return system, fmt.Errorf("stat has no system_stats parts")
+	}
+	switch statParts[0] {
+	case "current_processes":
+		system.ProcLoadavg.RunningProcs = val
+		return system, nil
+	case "loadavg":
+		return processStatPluginSystemStatsLoadAvg(system, statParts[1:], val)
+	case "net":
+		return processStatPluginSystemStatsNet(system, statParts[1:], val)
+	default:
+		return system, fmt.Errorf("stat has unknown system part '%s'", statParts[0])
+	}
+}
+
+func processStatPluginSystemStatsNet(system AstatsSystem, statParts []string, val uint64) (AstatsSystem, error) {
+	if len(statParts) < 2 {
+		return system, fmt.Errorf("net stat has no name and value part")
+	}
+	system.ProcNetDev.Interface = statParts[0]
+	switch statParts[1] {
+	case "rx_bytes":
+		system.ProcNetDev.RcvBytes = val
+	case "rx_packets":
+		system.ProcNetDev.RcvPackets = val
+	case "rx_errors":
+		system.ProcNetDev.RcvErrs = val
+	case "rx_missed_errors":
+		fallthrough
+	case "rx_dropped":
+		system.ProcNetDev.RcvDropped = val
+	case "rx_fifo_errors":
+		system.ProcNetDev.RcvFIFOErrs = val
+	case "rx_over_errors":
+		fallthrough
+	case "rx_length_errors":
+		fallthrough
+	case "rx_crc_errors":
+		fallthrough
+	case "rx_frame_errors":
+		system.ProcNetDev.RcvFrameErrs = val
+	case "rx_compressed":
+		system.ProcNetDev.RcvCompressed = val
+	case "multicast":
+		system.ProcNetDev.RcvMulticast = val
+	case "rx_nohandler":
+		// TODO something
+	case "tx_bytes":
+		system.ProcNetDev.SndBytes = val
+	case "tx_packets":
+		system.ProcNetDev.SndPackets = val
+	case "tx_errors":
+		system.ProcNetDev.SndErrs = val
+	case "tx_dropped":
+		system.ProcNetDev.SndDropped = val
+	case "tx_fifo_errors":
+		system.ProcNetDev.SndFIFOErrs = val
+	case "collisions":
+		system.ProcNetDev.SndCollisions = val
+	case "tx_aborted_errors":
+		fallthrough
+	case "tx_heartbeat_errors":
+		fallthrough
+	case "tx_window_errors":
+		fallthrough
+	case "tx_carrier_errors":
+		system.ProcNetDev.SndCarrierErrs = val
+	case "tx_compressed":
+		system.ProcNetDev.SndCompressed = val
+	default:
+		return system, fmt.Errorf("stat has unknown net part '%s'", statParts[1])
+	}
+	return system, nil
+}
+
+// AstatsLoadAvgMultiplier is the number that ATS Astats multiplies the load average by (because Astats is integral, and loadavg is decimal).
+const AstatsLoadAvgMultiplier = 100000.0
+
+func processStatPluginSystemStatsLoadAvg(system AstatsSystem, statParts []string, val uint64) (AstatsSystem, error) {
+	if len(statParts) < 1 {
+		return system, fmt.Errorf("stat has no loadavg part")
+	}
+	switch statParts[0] {
+	case "one":
+		system.ProcLoadavg.CPU1m = float64(val) / AstatsLoadAvgMultiplier
+	case "five":
+		system.ProcLoadavg.CPU5m = float64(val) / AstatsLoadAvgMultiplier
+	case "ten":
+		system.ProcLoadavg.CPU10m = float64(val) / AstatsLoadAvgMultiplier
+	default:
+		return system, fmt.Errorf("stat has unknown loadavg part '%s'", statParts[0])
+	}
+	return system, nil
+}
+
+func processStatPluginRemapStats(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.Stat, toData todata.TOData, stat string, statParts []string, val uint64, timeReceived time.Time) (map[tc.DeliveryServiceName]dsdata.Stat, error) {
 	if len(statParts) < 3 {
 		return stats, fmt.Errorf("stat has no remap_stats deliveryservice and name parts")
 	}
@@ -444,7 +555,7 @@ func processStatPluginRemapStats(server tc.CacheName, stats map[tc.DeliveryServi
 		dsStat = *newStat
 	}
 
-	if err := addCacheStat(&dsStat.TotalStats, statName, value); err != nil {
+	if err := addCacheStat(&dsStat.TotalStats, statName, val); err != nil {
 		return stats, err
 	}
 
@@ -469,88 +580,20 @@ func processStatPluginRemapStats(server tc.CacheName, stats map[tc.DeliveryServi
 
 // addCacheStat adds the given stat to the existing stat. Note this adds, it doesn't overwrite. Numbers are summed, strings are concatenated.
 // TODO make this less duplicate code somehow.
-func addCacheStat(stat *dsdata.StatCacheStats, name string, val interface{}) error {
+func addCacheStat(stat *dsdata.StatCacheStats, name string, val uint64) error {
 	switch name {
 	case "status_2xx":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Status2xx.Value += int64(v)
+		stat.Status2xx.Value += int64(val)
 	case "status_3xx":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Status3xx.Value += int64(v)
+		stat.Status3xx.Value += int64(val)
 	case "status_4xx":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Status4xx.Value += int64(v)
+		stat.Status4xx.Value += int64(val)
 	case "status_5xx":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Status5xx.Value += int64(v)
+		stat.Status5xx.Value += int64(val)
 	case "out_bytes":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.OutBytes.Value += int64(v)
-	case "is_available":
-		v, ok := val.(bool)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected bool actual '%v' type %T", name, val, val)
-		}
-		if v {
-			stat.IsAvailable.Value = true
-		}
+		stat.OutBytes.Value += int64(val)
 	case "in_bytes":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.InBytes.Value += v
-	case "tps_2xx":
-		v, ok := val.(int64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Tps2xx.Value += float64(v)
-	case "tps_3xx":
-		v, ok := val.(int64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Tps3xx.Value += float64(v)
-	case "tps_4xx":
-		v, ok := val.(int64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Tps4xx.Value += float64(v)
-	case "tps_5xx":
-		v, ok := val.(int64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.Tps5xx.Value += float64(v)
-	case "error_string":
-		v, ok := val.(string)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected string actual '%v' type %T", name, val, val)
-		}
-		stat.ErrorString.Value += v + ", "
-	case "tps_total":
-		v, ok := val.(float64)
-		if !ok {
-			return fmt.Errorf("stat '%s' value expected int actual '%v' type %T", name, val, val)
-		}
-		stat.TpsTotal.Value += v
+		stat.InBytes.Value += float64(val)
 	case "status_unknown":
 		return dsdata.ErrNotProcessedStat
 	default:
