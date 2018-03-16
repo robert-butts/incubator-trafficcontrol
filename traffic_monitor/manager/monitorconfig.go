@@ -24,6 +24,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"errors"
 
 	"github.com/apache/incubator-trafficcontrol/lib/go-log"
 	"github.com/apache/incubator-trafficcontrol/lib/go-tc"
@@ -224,6 +225,7 @@ func monitorConfigListen(
 		peerURLs := map[string]poller.PollConfig{}
 		caches := map[string]string{}
 
+		cgPoll := getPollingCachegroups(monitorConfig.Config, logMissingIntervalParams)
 		intervals, err := getIntervals(monitorConfig, cfg, logMissingIntervalParams)
 		logMissingIntervalParams = false // only log missing parameters once
 		if err != nil {
@@ -275,9 +277,14 @@ func monitorConfigListen(
 				log.Warnln("profile " + srv.Profile + " health.connection.timeout Parameter is missing or zero, using default " + DefaultHealthConnectionTimeout.String())
 			}
 
+			if len(cgPoll[tc.CacheGroupName(srv.CacheGroup)]) > 0 {
+				if _, ok := cgPoll[tc.CacheGroupName(srv.CacheGroup)][tc.TrafficMonitorName(staticAppData.Hostname)]; !ok {
+					continue
+				}
+			}
+
 			healthURLs[srv.HostName] = poller.PollConfig{URL: url, Host: srv.FQDN, Timeout: connTimeout, Format: format}
-			r = strings.NewReplacer("application=system", "application=")
-			statURL := r.Replace(url)
+			statURL := strings.NewReplacer("application=system", "application=").Replace(url)
 			statURLs[srv.HostName] = poller.PollConfig{URL: statURL, Host: srv.FQDN, Timeout: connTimeout, Format: format}
 		}
 
@@ -328,4 +335,60 @@ func monitorConfigListen(
 			}
 		}
 	}
+}
+
+const CachegroupPollingParameter = "health.polling.cachegroups"
+
+// getPollingCachegroups gets the monitoring.json config health.polling.cachegroups, parses it into a map, and returns the map, or an empty map if unsuccessful. If unsuccessful, the reason is logged.
+// Note this can be unsuccessful if the parameter does not exist. The caller should also poll all cachegroups which do not appear in the map. That will handle both the scenario of the parameter not existing, and of a particular cachegroup being omitted.
+func getPollingCachegroups(cfg map[string]interface{}, logErrs bool) map[tc.CacheGroupName]map[tc.TrafficMonitorName]struct{} {
+	cgPollI, cgPollExists := cfg[CachegroupPollingParameter]
+	if !cgPollExists {
+		if logErrs {
+			log.Warnln("No health.polling.cachegroups parameter, polling all cachegroups")
+		}
+		return map[tc.CacheGroupName]map[tc.TrafficMonitorName]struct{}{}
+	}
+
+	cgPollStr, cgPollIsStr := cgPollI.(string)
+	if !cgPollIsStr {
+		if logErrs {
+			log.Warnf("Parameter health.polling.cachegroups %T not a string, polling all cachegroups\n", cgPollI)
+		}
+		return map[tc.CacheGroupName]map[tc.TrafficMonitorName]struct{}{}
+	}
+
+	pollCGs, err := parsePollingCachegroups(cgPollStr)
+	if err != nil {
+		if logErrs {
+			log.Errorln("Error parsing health.polling.cachegroups, polling all cachegroups: " + err.Error())
+		}
+		return map[tc.CacheGroupName]map[tc.TrafficMonitorName]struct{}{}
+	}
+
+	return pollCGs
+}
+
+// parsePollingCachegroups parses the health.polling.cachegroups parameter string, and returns a map of cachegroups to the monitors which poll them.
+// The parameter string is of the format `monitor-hostname:cachegroup1,cachegroup2;monitor2:cachegroup3,cachegroup4
+func parsePollingCachegroups(pollingCachegroups string) (map[tc.CacheGroupName]map[tc.TrafficMonitorName]struct{}, error) {
+	cgMonitorMap := map[tc.CacheGroupName]map[tc.TrafficMonitorName]struct{}{}
+	monitorGroups := strings.Split(pollingCachegroups, ";")
+	for _, monitorGroup := range monitorGroups {
+		monitorCachegroups := strings.SplitN(monitorGroup, ":", 2)
+		if len(monitorCachegroups) != 2 {
+			return nil, errors.New("malformed polling cachegroups string: '" + pollingCachegroups + "' at '" + monitorGroup + "'")
+		}
+		monitor := tc.TrafficMonitorName(monitorCachegroups[0])
+		cachegroupsStr := monitorCachegroups[1]
+		cachegroups := strings.Split(cachegroupsStr, ",")
+		for _, cachegroupS := range cachegroups {
+			cachegroup := tc.CacheGroupName(cachegroupS)
+			if _, ok := cgMonitorMap[cachegroup]; !ok {
+				cgMonitorMap[cachegroup] = map[tc.TrafficMonitorName]struct{}{}
+			}
+			cgMonitorMap[cachegroup][monitor] = struct{}{}
+		}
+	}
+	return cgMonitorMap, nil
 }
