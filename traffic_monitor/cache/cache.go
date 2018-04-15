@@ -60,7 +60,7 @@ func (handler Handler) Precompute() bool {
 
 // PrecomputedData represents data parsed and pre-computed from the Result.
 type PrecomputedData struct {
-	DeliveryServiceStats map[tc.DeliveryServiceName]dsdata.Stat
+	DSStats              map[tc.DeliveryServiceName]dsdata.CacheDSStats
 	OutBytes             int64
 	MaxKbps              int64
 	Errors               []error

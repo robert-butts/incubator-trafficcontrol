@@ -368,21 +368,21 @@ func CreateStats(precomputed map[tc.CacheName]cache.PrecomputedData, toData toda
 		}
 
 		// TODO check result.PrecomputedData.Errors
-		for ds, resultStat := range precomputedData.DeliveryServiceStats {
+		for ds, resultStat := range precomputedData.DSStats {
 			if ds == "" {
 				log.Errorf("EMPTY precomputed delivery service")
 				continue
 			}
 
 			if _, ok := dsStats.DeliveryService[ds]; !ok {
-				dsStats.DeliveryService[ds] = resultStat
-				continue
+				dsStats.DeliveryService[ds] = *dsdata.NewStat()
 			}
+			// TODO verify in-place modifications work
 			httpDsStat := dsStats.DeliveryService[ds]
-			httpDsStat.TotalStats = httpDsStat.TotalStats.Sum(resultStat.TotalStats)
-			httpDsStat.CacheGroups[cachegroup] = httpDsStat.CacheGroups[cachegroup].Sum(resultStat.CacheGroups[cachegroup])
-			httpDsStat.Types[serverType] = httpDsStat.Types[serverType].Sum(resultStat.Types[serverType])
-			httpDsStat.Caches[server] = httpDsStat.Caches[server].Sum(resultStat.Caches[server])
+			httpDsStat.TotalStats = httpDsStat.TotalStats.SumCacheDSStats(resultStat)
+			httpDsStat.CacheGroups[cachegroup] = httpDsStat.CacheGroups[cachegroup].SumCacheDSStats(resultStat)
+			httpDsStat.Types[serverType] = httpDsStat.Types[serverType].SumCacheDSStats(resultStat)
+			httpDsStat.Caches[server] = httpDsStat.Caches[server].SumCacheDSStats(resultStat)
 			httpDsStat.CommonStats = dsStats.DeliveryService[ds].CommonStats
 			dsStats.DeliveryService[ds] = httpDsStat // TODO determine if necessary
 		}

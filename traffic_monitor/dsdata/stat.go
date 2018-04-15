@@ -201,6 +201,17 @@ type StatCacheStats struct {
 	TpsTotal    StatFloat  `json:"tps_total"`
 }
 
+func (a StatCacheStats) SumCacheDSStats(b CacheDSStats) StatCacheStats {
+	// TODO test whether pointer or value-return-set
+	a.InBytes.Value += float64(b.InBytes) // TODO change InBytes to int64?
+	a.OutBytes.Value += b.OutBytes
+	a.Status2xx.Value += b.Status2xx
+	a.Status3xx.Value += b.Status3xx
+	a.Status4xx.Value += b.Status4xx
+	a.Status5xx.Value += b.Status5xx
+	return a
+}
+
 // Sum adds the given cache stats to this cache stats. Numeric values are summed; strings are appended.
 func (a StatCacheStats) Sum(b StatCacheStats) StatCacheStats {
 	return StatCacheStats{
@@ -481,4 +492,14 @@ func addStatCacheStats(s *StatsOld, c StatCacheStats, deliveryService tc.Deliver
 	add("error-string", c.ErrorString.Value)
 	add("tps_total", fmt.Sprintf("%f", c.TpsTotal.Value))
 	return s
+}
+
+// CacheDSStats contains all the stats data about a delivery service returned by the cache stats endpoint (_astats, for ATS).
+type CacheDSStats struct {
+	InBytes   int64
+	OutBytes  int64
+	Status2xx int64
+	Status3xx int64
+	Status4xx int64
+	Status5xx int64
 }
