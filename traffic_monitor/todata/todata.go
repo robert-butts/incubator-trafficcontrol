@@ -58,6 +58,40 @@ func (d Regexes) DeliveryService(domain, subdomain, subsubdomain string) (tc.Del
 	return "", false
 }
 
+
+func (d Regexes) FQDNDeliveryService(fqdn string) (tc.DeliveryServiceName, bool) {
+	if ds, ok := d.DotStartSlashDotFooSlashDotDotStar[getSubdomain(fqdn)]; ok {
+		return ds, true
+	}
+	if ds, ok := d.DirectMatches[fqdn]; ok {
+		return ds, true
+	}
+	for regex, ds := range d.RegexMatch {
+		if regex.MatchString(fqdn) {
+			return ds, true
+		}
+	}
+	return "", false
+}
+
+// getSubdomain returns the second part of the FQDN, or the full FQDN if no second part exists.
+func getSubdomain(fqdn string) string {
+	firstDot := strings.Index(fqdn, ".")
+	if firstDot == -1 {
+		return string(fqdn)
+	}
+	if len(fqdn) < firstDot+1 {
+		return string(fqdn)
+	}
+	subdomain := fqdn[firstDot+1:]
+	secondDot := strings.Index(subdomain, ".")
+	if secondDot == -1 {
+		return string(subdomain)
+	}
+	subdomain = subdomain[:secondDot]
+	return string(subdomain)
+}
+
 // NewRegexes constructs a new Regexes object, initializing internal pointer members.
 func NewRegexes() Regexes {
 	return Regexes{DirectMatches: map[string]tc.DeliveryServiceName{}, DotStartSlashDotFooSlashDotDotStar: map[string]tc.DeliveryServiceName{}, RegexMatch: map[*regexp.Regexp]tc.DeliveryServiceName{}}

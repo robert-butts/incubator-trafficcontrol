@@ -66,11 +66,20 @@ func astatsPrecompute(cache tc.CacheName, toData todata.TOData, rawStats map[str
 	}
 	precomputed.MaxKbps = int64(system.InfSpeed) * KbPerMb
 
-	for stat, value := range rawStats {
+	for stat, ival := range rawStats {
+		fval, ok := ival.(float64)
+		if !ok {
+			err := fmt.Errorf("stat '%s' value unknown type %T", stat, ival)
+			log.Infof("precomputing cache %v stat %v value %v error %v", cache, stat, ival, err)
+			precomputed.Errors = append(precomputed.Errors, err)
+			continue
+		}
+		val := int64(fval)
+
 		err := error(nil)
-		stats, err = astatsProcessStat(cache, stats, toData, stat, value)
+		stats, err = astatsProcessStat(cache, stats, toData, stat, val)
 		if err != nil && err != dsdata.ErrNotProcessedStat {
-			log.Infof("precomputing cache %v stat %v value %v error %v", cache, stat, value, err)
+			log.Infof("precomputing cache %v stat %v value %v error %v", cache, stat, val, err)
 			precomputed.Errors = append(precomputed.Errors, err)
 		}
 	}
@@ -81,112 +90,69 @@ func astatsPrecompute(cache tc.CacheName, toData todata.TOData, rawStats map[str
 // outBytes takes the proc.net.dev string, and the interface name, and returns the bytes field
 func astatsOutBytes(procNetDev, iface string) (int64, error) {
 	if procNetDev == "" {
-		return 0, fmt.Errorf("procNetDev empty")
+		return 0, errors.New("procNetDev empty")
 	}
 	if iface == "" {
-		return 0, fmt.Errorf("iface empty")
+		return 0, errors.New("iface empty")
 	}
 	ifacePos := strings.Index(procNetDev, iface)
 	if ifacePos == -1 {
-		return 0, fmt.Errorf("interface '%s' not found in proc.net.dev '%s'", iface, procNetDev)
+		return 0, errors.New("interface '" + iface + "' not found in proc.net.dev '" + procNetDev + "'")
 	}
 
 	procNetDevIfaceBytes := procNetDev[ifacePos+len(iface)+1:]
 	procNetDevIfaceBytesArr := strings.Fields(procNetDevIfaceBytes) // TODO test
 	if len(procNetDevIfaceBytesArr) < 10 {
-		return 0, fmt.Errorf("proc.net.dev iface '%v' unknown format '%s'", iface, procNetDev)
+		return 0, errors.New("proc.net.dev iface '" + iface + "' unknown format '" + procNetDev + "'")
 	}
 	procNetDevIfaceBytes = procNetDevIfaceBytesArr[8]
 
 	return strconv.ParseInt(procNetDevIfaceBytes, 10, 64)
 }
 
-// astatsProcessStat and its subsidiary functions act as a State Machine, flowing the stat thru states for each "." component of the stat name
-
-func astatsProcessStat(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.CacheDSStats, toData todata.TOData, stat string, value interface{}) (map[tc.DeliveryServiceName]dsdata.CacheDSStats, error) {
-	parts := strings.Split(stat, ".")
-	if len(parts) < 1 {
-		return stats, fmt.Errorf("stat has no initial part")
-	}
-
-	switch parts[0] {
-	case "plugin":
-		return astatsProcessStatPlugin(server, stats, toData, stat, parts[1:], value)
-	case "proxy":
+func astatsProcessStat(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.CacheDSStats, toData todata.TOData, stat string, val int64) (map[tc.DeliveryServiceName]dsdata.CacheDSStats, error) {
+	dsStatPrefix := "plugin.remap_stats."
+	if !strings.HasPrefix(stat, dsStatPrefix) {
 		return stats, dsdata.ErrNotProcessedStat
-	case "server":
-		return stats, dsdata.ErrNotProcessedStat
-	default:
-		return stats, fmt.Errorf("stat '%s' has unknown initial part '%s'", stat, parts[0])
 	}
-}
-
-func astatsProcessStatPlugin(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.CacheDSStats, toData todata.TOData, stat string, statParts []string, value interface{}) (map[tc.DeliveryServiceName]dsdata.CacheDSStats, error) {
-	if len(statParts) < 1 {
-		return stats, fmt.Errorf("stat has no plugin part")
+	stat = stat[len(dsStatPrefix):]
+	lastDot := strings.LastIndex(stat, ".")
+	if lastDot == -1 {
+		return stats, errors.New("malformed stat '" + stat + "'")
 	}
-	switch statParts[0] {
-	case "remap_stats":
-		return astatsProcessStatPluginRemapStats(server, stats, toData, stat, statParts[1:], value)
-	default:
-		return stats, fmt.Errorf("stat has unknown plugin part '%s'", statParts[0])
-	}
-}
-
-func astatsProcessStatPluginRemapStats(server tc.CacheName, stats map[tc.DeliveryServiceName]dsdata.CacheDSStats, toData todata.TOData, stat string, statParts []string, value interface{}) (map[tc.DeliveryServiceName]dsdata.CacheDSStats, error) {
-	if len(statParts) < 3 {
-		return stats, fmt.Errorf("stat has no remap_stats deliveryservice and name parts")
-	}
-
-	// the FQDN is `subsubdomain`.`subdomain`.`domain`. For a HTTP delivery service, `subsubdomain` will be the cache hostname; for a DNS delivery service, it will be `edge`. Then, `subdomain` is the delivery service regex.
-	subsubdomain := statParts[0]
-	subdomain := statParts[1]
-	domain := strings.Join(statParts[2:len(statParts)-1], ".")
-
-	ds, ok := toData.DeliveryServiceRegexes.DeliveryService(domain, subdomain, subsubdomain)
+	fqdn := stat[:lastDot]
+	statName := stat[lastDot+1:]
+	ds, ok := toData.DeliveryServiceRegexes.FQDNDeliveryService(fqdn)
 	if !ok {
-		fqdn := fmt.Sprintf("%s.%s.%s", subsubdomain, subdomain, domain)
-		return stats, fmt.Errorf("ERROR no delivery service match for fqdn '%v' stat '%v'\n", fqdn, strings.Join(statParts, "."))
+		return stats, errors.New("no delivery service match for fqdn '" + fqdn + "' stat '" + statName + "'")
 	}
-	if ds == "" {
-		fqdn := fmt.Sprintf("%s.%s.%s", subsubdomain, subdomain, domain)
-		return stats, fmt.Errorf("ERROR EMPTY delivery service fqdn %v stat %v\n", fqdn, strings.Join(statParts, "."))
-	}
-
-	statName := statParts[len(statParts)-1]
-
 	dsStat := stats[ds]
-	if err := astatsAddCacheStat(&dsStat, statName, value); err != nil {
+	if err := astatsAddCacheStat(&dsStat, statName, val); err != nil {
 		return stats, err
 	}
 	stats[ds] = dsStat
 	return stats, nil
 }
 
-// addCacheStat adds the given stat to the existing stat. Note this adds, it doesn't overwrite. Numbers are summed, strings are concatenated.
-// TODO make this less duplicate code somehow.
-func astatsAddCacheStat(stat *dsdata.CacheDSStats, name string, ival interface{}) error {
-	v, ok := ival.(float64)
-	if !ok {
-		return fmt.Errorf("stat '%s' value unknown type %T", name, ival)
-	}
+// addCacheStat adds the given stat to the existing stat.
+func astatsAddCacheStat(stat *dsdata.CacheDSStats, name string, val int64) error {
 	switch name {
 	case "status_2xx":
-		stat.Status2xx += int64(v)
+		stat.Status2xx += val
 	case "status_3xx":
-		stat.Status3xx += int64(v)
+		stat.Status3xx += val
 	case "status_4xx":
-		stat.Status4xx += int64(v)
+		stat.Status4xx += val
 	case "status_5xx":
-		stat.Status5xx += int64(v)
+		stat.Status5xx += val
 	case "out_bytes":
-		stat.OutBytes += int64(v)
+		stat.OutBytes += val
 	case "in_bytes":
-		stat.InBytes += int64(v)
+		stat.InBytes += val
 	case "status_unknown":
 		return dsdata.ErrNotProcessedStat
 	default:
-		return fmt.Errorf("unknown stat '%s'", name) // TODO verify removed stats aren't used, e.g. is_available
+		return errors.New("unknown stat '" + name + "'") // TODO verify removed stats aren't used, e.g. is_available
 	}
 	return nil
 }
