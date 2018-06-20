@@ -696,7 +696,6 @@ sub api_routes {
 	$r->get("/api/$version/phys_locations")->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#index', namespace => $namespace );
 	$r->get("/api/$version/phys_locations/trimmed")->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#index_trimmed', namespace => $namespace );
 	$r->get( "/api/$version/phys_locations/:id" => [ id => qr/\d+/ ] )->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#show', namespace => $namespace );
-	$r->post("/api/$version/phys_locations")->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#create', namespace => $namespace );
 	$r->post("/api/$version/regions/:region_name/phys_locations")->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#create_for_region', namespace => $namespace );
 	$r->put("/api/$version/phys_locations/:id" => [ id => qr/\d+/ ] )->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#update', namespace => $namespace );
 	$r->delete("/api/$version/phys_locations/:id" => [ id => qr/\d+/ ] )->over( authenticated => 1, not_ldap => 1 )->to( 'PhysLocation#delete', namespace => $namespace );
