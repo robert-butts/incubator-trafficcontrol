@@ -31,7 +31,7 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_monitor/datareq"
 	"github.com/apache/trafficcontrol/traffic_monitor/dsdata"
-	to "github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 )
 
 const RequestTimeout = time.Second * time.Duration(30)
@@ -131,7 +131,7 @@ func GetStats(uri string) (*datareq.Stats, error) {
 
 type ValidatorFunc func(
 	tmURI string,
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	grace time.Duration,
 	onErr func(error),
@@ -140,7 +140,7 @@ type ValidatorFunc func(
 )
 
 type AllValidatorFunc func(
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	includeOffline bool,
 	grace time.Duration,
@@ -152,13 +152,13 @@ type AllValidatorFunc func(
 // CRStatesOfflineValidator is designed to be run as a goroutine, and does not return. It continously validates every `interval`, and calls `onErr` on failure, `onResumeSuccess` when a failure ceases, and `onCheck` on every poll.
 func Validator(
 	tmURI string,
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	grace time.Duration,
 	onErr func(error),
 	onResumeSuccess func(),
 	onCheck func(error),
-	validator func(tmURI string, toClient *to.Session) error,
+	validator func(tmURI string, toClient toclient.Client) error,
 ) {
 	invalid := false
 	invalidStart := time.Time{}
@@ -194,7 +194,7 @@ type CRConfigOrError struct {
 	Err      error
 }
 
-func GetMonitors(toClient *to.Session, includeOffline bool) ([]tc.Server, error) {
+func GetMonitors(toClient toclient.Client, includeOffline bool) ([]tc.Server, error) {
 	trafficMonitorType := "RASCAL"
 	monitorTypeQuery := map[string][]string{"type": []string{trafficMonitorType}}
 	servers, _, err := toClient.GetServersByType(monitorTypeQuery)
@@ -209,14 +209,14 @@ func GetMonitors(toClient *to.Session, includeOffline bool) ([]tc.Server, error)
 }
 
 func AllValidator(
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	includeOffline bool,
 	grace time.Duration,
 	onErr func(tc.TrafficMonitorName, error),
 	onResumeSuccess func(tc.TrafficMonitorName),
 	onCheck func(tc.TrafficMonitorName, error),
-	validator func(toClient *to.Session, includeOffline bool) (map[tc.TrafficMonitorName]error, error),
+	validator func(toClient toclient.Client, includeOffline bool) (map[tc.TrafficMonitorName]error, error),
 ) {
 	invalid := map[tc.TrafficMonitorName]bool{}
 	invalidStart := map[tc.TrafficMonitorName]time.Time{}
@@ -280,7 +280,7 @@ func GetCDNs(servers []tc.Server) map[tc.CDNName]struct{} {
 	return cdns
 }
 
-func GetCRConfigs(cdns map[tc.CDNName]struct{}, toClient *to.Session) map[tc.CDNName]CRConfigOrError {
+func GetCRConfigs(cdns map[tc.CDNName]struct{}, toClient toclient.Client) map[tc.CDNName]CRConfigOrError {
 	crConfigs := map[tc.CDNName]CRConfigOrError{}
 	for cdn, _ := range cdns {
 		crConfigBytes, _, err := toClient.GetCRConfig(string(cdn))

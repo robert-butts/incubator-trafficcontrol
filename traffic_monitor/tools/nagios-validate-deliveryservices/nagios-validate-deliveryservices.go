@@ -25,7 +25,7 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-nagios"
 	"github.com/apache/trafficcontrol/traffic_monitor/tmcheck"
-	to "github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 )
 
 const UserAgent = "tm-offline-validator/0.1"
@@ -43,7 +43,7 @@ func main() {
 		return
 	}
 
-	toClient, _, err := to.LoginWithAgent(*toURI, *toUser, *toPass, true, UserAgent, false, tmcheck.RequestTimeout)
+	toClient, _, err := toclient.New(*toURI, *toUser, *toPass, true, UserAgent, false, tmcheck.RequestTimeout)
 	if err != nil {
 		fmt.Printf("Error logging in to Traffic Ops: %v\n", err)
 		return

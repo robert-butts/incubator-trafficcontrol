@@ -25,11 +25,11 @@ import (
 	"time"
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
-	to "github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 )
 
 // ValidateOfflineStates validates that no OFFLINE or ADMIN_DOWN caches in the given Traffic Ops' CRConfig are marked Available in the given Traffic Monitor's CRStates.
-func ValidateOfflineStates(tmURI string, toClient *to.Session) error {
+func ValidateOfflineStates(tmURI string, toClient toclient.Client) error {
 	cdn, err := GetCDN(tmURI)
 	if err != nil {
 		return fmt.Errorf("getting CDN from Traffic Monitor: %v", err)
@@ -38,7 +38,7 @@ func ValidateOfflineStates(tmURI string, toClient *to.Session) error {
 }
 
 // ValidateOfflineStatesWithCDN validates per ValidateOfflineStates, but saves an additional query if the Traffic Monitor's CDN is known.
-func ValidateOfflineStatesWithCDN(tmURI string, tmCDN string, toClient *to.Session) error {
+func ValidateOfflineStatesWithCDN(tmURI string, tmCDN string, toClient toclient.Client) error {
 	crConfigBytes, _, err := toClient.GetCRConfig(tmCDN)
 	if err != nil {
 		return fmt.Errorf("getting CRConfig: %v", err)
@@ -53,7 +53,7 @@ func ValidateOfflineStatesWithCDN(tmURI string, tmCDN string, toClient *to.Sessi
 }
 
 // ValidateOfflineStatesWithCRConfig validates per ValidateOfflineStates, but saves querying the CRconfig if it's already fetched.
-func ValidateOfflineStatesWithCRConfig(tmURI string, crConfig *tc.CRConfig, toClient *to.Session) error {
+func ValidateOfflineStatesWithCRConfig(tmURI string, crConfig *tc.CRConfig, toClient toclient.Client) error {
 	crStates, err := GetCRStates(tmURI + TrafficMonitorCRStatesPath)
 	if err != nil {
 		return fmt.Errorf("getting CRStates: %v", err)
@@ -86,7 +86,7 @@ func ValidateCRStates(crstates *tc.CRStates, crconfig *tc.CRConfig) error {
 // CRStatesOfflineValidator is designed to be run as a goroutine, and does not return. It continously validates every `interval`, and calls `onErr` on failure, `onResumeSuccess` when a failure ceases, and `onCheck` on every poll.
 func CRStatesOfflineValidator(
 	tmURI string,
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	grace time.Duration,
 	onErr func(error),
@@ -98,7 +98,7 @@ func CRStatesOfflineValidator(
 
 // AllMonitorsCRStatesOfflineValidator is designed to be run as a goroutine, and does not return. It continously validates every `interval`, and calls `onErr` on failure, `onResumeSuccess` when a failure ceases, and `onCheck` on every poll. Note the error passed to `onErr` may be a general validation error not associated with any monitor, in which case the passed `tc.TrafficMonitorName` will be empty.
 func AllMonitorsCRStatesOfflineValidator(
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	includeOffline bool,
 	grace time.Duration,
@@ -110,7 +110,7 @@ func AllMonitorsCRStatesOfflineValidator(
 }
 
 // ValidateOfflineStates validates that no OFFLINE or ADMIN_DOWN caches in the given Traffic Ops' CRConfig are marked Available in the given Traffic Monitor's CRStates.
-func ValidateAllMonitorsOfflineStates(toClient *to.Session, includeOffline bool) (map[tc.TrafficMonitorName]error, error) {
+func ValidateAllMonitorsOfflineStates(toClient toclient.Client, includeOffline bool) (map[tc.TrafficMonitorName]error, error) {
 	servers, err := GetMonitors(toClient, includeOffline)
 	if err != nil {
 		return nil, err

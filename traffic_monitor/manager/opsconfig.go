@@ -37,7 +37,7 @@ import (
 	"github.com/apache/trafficcontrol/traffic_monitor/threadsafe"
 	"github.com/apache/trafficcontrol/traffic_monitor/todata"
 	"github.com/apache/trafficcontrol/traffic_monitor/towrap"
-	to "github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 )
 
 // StartOpsConfigManager starts the ops config manager goroutine, returning the (threadsafe) variables which it sets.
@@ -133,7 +133,7 @@ func StartOpsConfigManager(
 		useCache := false
 		trafficOpsRequestTimeout := time.Second * time.Duration(10)
 
-		realToSession, toAddr, err := to.LoginWithAgent(newOpsConfig.Url, newOpsConfig.Username, newOpsConfig.Password, newOpsConfig.Insecure, staticAppData.UserAgent, useCache, trafficOpsRequestTimeout)
+		realToSession, toAddr, err := toclient.New(newOpsConfig.Url, newOpsConfig.Username, newOpsConfig.Password, newOpsConfig.Insecure, staticAppData.UserAgent, useCache, trafficOpsRequestTimeout)
 		if err != nil {
 			handleErr(fmt.Errorf("MonitorConfigPoller: error instantiating Session with traffic_ops (%v): %s\n", toAddr, err))
 			return
@@ -177,7 +177,7 @@ func StartOpsConfigManager(
 
 // getMonitorCDN returns the CDN of a given Traffic Monitor.
 // TODO change to get by name, when Traffic Ops supports querying a single server.
-func getMonitorCDN(toc *to.Session, monitorHostname string) (string, error) {
+func getMonitorCDN(toc toclient.Client, monitorHostname string) (string, error) {
 	servers, _, err := toc.GetServers()
 	if err != nil {
 		return "", fmt.Errorf("getting monitor %s CDN: %v", monitorHostname, err)

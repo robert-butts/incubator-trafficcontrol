@@ -22,7 +22,7 @@ package tmcheck
 import (
 	"fmt"
 	"github.com/apache/trafficcontrol/lib/go-tc"
-	to "github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 	"time"
 )
 
@@ -50,7 +50,7 @@ func ValidatePeerPoller(uri string) error {
 	return nil
 }
 
-func ValidateAllPeerPollers(toClient *to.Session, includeOffline bool) (map[tc.TrafficMonitorName]error, error) {
+func ValidateAllPeerPollers(toClient toclient.Client, includeOffline bool) (map[tc.TrafficMonitorName]error, error) {
 	servers, err := GetMonitors(toClient, includeOffline)
 	if err != nil {
 		return nil, err
@@ -65,19 +65,19 @@ func ValidateAllPeerPollers(toClient *to.Session, includeOffline bool) (map[tc.T
 
 func PeerPollersValidator(
 	tmURI string,
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	grace time.Duration,
 	onErr func(error),
 	onResumeSuccess func(),
 	onCheck func(error),
 ) {
-	wrapValidatePeerPoller := func(uri string, _ *to.Session) error { return ValidatePeerPoller(uri) }
+	wrapValidatePeerPoller := func(uri string, _ toclient.Client) error { return ValidatePeerPoller(uri) }
 	Validator(tmURI, toClient, interval, grace, onErr, onResumeSuccess, onCheck, wrapValidatePeerPoller)
 }
 
 func PeerPollersAllValidator(
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	includeOffline bool,
 	grace time.Duration,

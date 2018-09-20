@@ -29,7 +29,7 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/lib/go-tc"
-	"github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 )
 
 // ITrafficOpsSession provides an interface to the Traffic Ops client, so it may be wrapped or mocked.
@@ -37,7 +37,7 @@ type ITrafficOpsSession interface {
 	CRConfigRaw(cdn string) ([]byte, error)
 	LastCRConfig(cdn string) ([]byte, time.Time, error)
 	TrafficMonitorConfigMap(cdn string) (*tc.TrafficMonitorConfigMap, error)
-	Set(session *client.Session)
+	Set(session toclient.Client)
 	URL() (string, error)
 	User() (string, error)
 	Servers() ([]tc.Server, error)
@@ -147,26 +147,26 @@ type CRConfigStat struct {
 
 // TrafficOpsSessionThreadsafe provides access to the Traffic Ops client safe for multiple goroutines. This fulfills the ITrafficOpsSession interface.
 type TrafficOpsSessionThreadsafe struct {
-	session      **client.Session // pointer-to-pointer, because we're given a pointer from the Traffic Ops package, and we don't want to copy it.
+	session      *toclient.Client // pointer-to-pointer, because we're given a pointer from the Traffic Ops package, and we don't want to copy it.
 	m            *sync.Mutex
 	lastCRConfig ByteMapCache
 	crConfigHist CRConfigHistoryThreadsafe
 }
 
 // NewTrafficOpsSessionThreadsafe returns a new threadsafe TrafficOpsSessionThreadsafe wrapping the given `Session`.
-func NewTrafficOpsSessionThreadsafe(s *client.Session, crConfigHistoryLimit uint64) TrafficOpsSessionThreadsafe {
+func NewTrafficOpsSessionThreadsafe(s toclient.Client, crConfigHistoryLimit uint64) TrafficOpsSessionThreadsafe {
 	return TrafficOpsSessionThreadsafe{session: &s, m: &sync.Mutex{}, lastCRConfig: NewByteMapCache(), crConfigHist: NewCRConfigHistoryThreadsafe(crConfigHistoryLimit)}
 }
 
 // Set sets the internal Traffic Ops session. This is safe for multiple goroutines, being aware they will race.
-func (s TrafficOpsSessionThreadsafe) Set(session *client.Session) {
+func (s TrafficOpsSessionThreadsafe) Set(session toclient.Client) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	*s.session = session
 }
 
 // getThreadsafeSession is used internally to get a copy of the session pointer, or nil if it doesn't exist. This should not be used outside TrafficOpsSessionThreadsafe, and never stored, because part of the purpose of TrafficOpsSessionThreadsafe is to store a pointer to the Session pointer, so it can be updated by one goroutine and immediately used by another. This should only be called immediately before using the session, since someone else may update it concurrently.
-func (s TrafficOpsSessionThreadsafe) get() *client.Session {
+func (s TrafficOpsSessionThreadsafe) get() toclient.Client {
 	s.m.Lock()
 	defer s.m.Unlock()
 	if s.session == nil || *s.session == nil {
@@ -180,7 +180,7 @@ func (s TrafficOpsSessionThreadsafe) URL() (string, error) {
 	if ss == nil {
 		return "", ErrNilSession
 	}
-	return ss.URL, nil
+	return ss.URI(), nil
 }
 
 func (s TrafficOpsSessionThreadsafe) User() (string, error) {
@@ -188,7 +188,7 @@ func (s TrafficOpsSessionThreadsafe) User() (string, error) {
 	if ss == nil {
 		return "", ErrNilSession
 	}
-	return ss.UserName, nil
+	return ss.User(), nil
 }
 
 func (s TrafficOpsSessionThreadsafe) CRConfigHistory() []CRConfigStat {

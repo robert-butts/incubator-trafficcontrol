@@ -26,12 +26,12 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_monitor/dsdata"
-	to "github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 )
 
 // ValidateDSStates validates that all Delivery Services in the CRConfig exist in given Traffic Monitor's DSStats.
 // Existence in DSStats is useful to verify, because "Available: false" in CRStates
-func ValidateDSStats(tmURI string, toClient *to.Session) error {
+func ValidateDSStats(tmURI string, toClient toclient.Client) error {
 	cdn, err := GetCDN(tmURI)
 	if err != nil {
 		return fmt.Errorf("getting CDN from Traffic Monitor: %v", err)
@@ -40,7 +40,7 @@ func ValidateDSStats(tmURI string, toClient *to.Session) error {
 }
 
 // ValidateOfflineStatesWithCDN validates per ValidateOfflineStates, but saves an additional query if the Traffic Monitor's CDN is known.
-func ValidateDSStatsWithCDN(tmURI string, tmCDN string, toClient *to.Session) error {
+func ValidateDSStatsWithCDN(tmURI string, tmCDN string, toClient toclient.Client) error {
 	crConfigBytes, _, err := toClient.GetCRConfig(tmCDN)
 	if err != nil {
 		return fmt.Errorf("getting CRConfig: %v", err)
@@ -55,7 +55,7 @@ func ValidateDSStatsWithCDN(tmURI string, tmCDN string, toClient *to.Session) er
 }
 
 // ValidateOfflineStatesWithCRConfig validates per ValidateOfflineStates, but saves querying the CRconfig if it's already fetched.
-func ValidateDSStatsWithCRConfig(tmURI string, crConfig *tc.CRConfig, toClient *to.Session) error {
+func ValidateDSStatsWithCRConfig(tmURI string, crConfig *tc.CRConfig, toClient toclient.Client) error {
 	dsStats, err := GetDSStats(tmURI + TrafficMonitorDSStatsPath)
 	if err != nil {
 		return fmt.Errorf("getting DSStats: %v", err)
@@ -89,7 +89,7 @@ func ValidateDSStatsData(dsStats *dsdata.StatsOld, crconfig *tc.CRConfig) error 
 // DSStatsValidator is designed to be run as a goroutine, and does not return. It continously validates every `interval`, and calls `onErr` on failure, `onResumeSuccess` when a failure ceases, and `onCheck` on every poll.
 func DSStatsValidator(
 	tmURI string,
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	grace time.Duration,
 	onErr func(error),
@@ -101,7 +101,7 @@ func DSStatsValidator(
 
 // AllMonitorsDSStatsValidator is designed to be run as a goroutine, and does not return. It continously validates every `interval`, and calls `onErr` on failure, `onResumeSuccess` when a failure ceases, and `onCheck` on every poll. Note the error passed to `onErr` may be a general validation error not associated with any monitor, in which case the passed `tc.TrafficMonitorName` will be empty.
 func AllMonitorsDSStatsValidator(
-	toClient *to.Session,
+	toClient toclient.Client,
 	interval time.Duration,
 	includeOffline bool,
 	grace time.Duration,
@@ -113,7 +113,7 @@ func AllMonitorsDSStatsValidator(
 }
 
 // ValidateAllMonitorDSStats validates, for all monitors in the given Traffic Ops, DSStats contains all Delivery Services in the CRConfig.
-func ValidateAllMonitorsDSStats(toClient *to.Session, includeOffline bool) (map[tc.TrafficMonitorName]error, error) {
+func ValidateAllMonitorsDSStats(toClient toclient.Client, includeOffline bool) (map[tc.TrafficMonitorName]error, error) {
 	servers, err := GetMonitors(toClient, includeOffline)
 	if err != nil {
 		return nil, err
