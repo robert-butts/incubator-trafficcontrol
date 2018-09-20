@@ -48,6 +48,11 @@ type Session struct {
 	UserAgentStr string
 }
 
+func (s *Session) URI() string  { return s.URL }
+func (s *Session) User() string { return s.UserName }
+
+// NewSession returns a new client "Session"
+// Deprecated: use New
 func NewSession(user, password, url, userAgent string, client *http.Client, useCache bool) *Session {
 	return &Session{
 		UserName:     user,
@@ -182,6 +187,7 @@ func (to *Session) logout() (net.Addr, error) {
 //     to := traffic_ops.Login("user", "passwd", true)
 // subsequent calls like to.GetData("datadeliveryservice") will be authenticated.
 // Returns the logged in client, the remote address of Traffic Ops which was translated and used to log in, and any error. If the error is not nil, the remote address may or may not be nil, depending whether the error occurred before the login request.
+// Deprecated: use New instead
 func LoginWithAgent(toURL string, toUser string, toPasswd string, insecure bool, userAgent string, useCache bool, requestTimeout time.Duration) (*Session, net.Addr, error) {
 	options := cookiejar.Options{
 		PublicSuffixList: publicsuffix.List,
