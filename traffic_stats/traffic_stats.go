@@ -36,7 +36,7 @@ import (
 	"time"
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
-	"github.com/apache/trafficcontrol/traffic_ops/client"
+	"github.com/apache/trafficcontrol/traffic_ops/toclient"
 	log "github.com/cihub/seelog"
 	influx "github.com/influxdata/influxdb/client/v2"
 )
@@ -416,13 +416,13 @@ func queryDB(con influx.Client, cmd string, database string) (res []influx.Resul
 }
 
 func writeSummaryStats(config StartupConfig, statsSummary tc.StatsSummary) {
-	to, _, err := client.LoginWithAgent(config.ToURL, config.ToUser, config.ToPasswd, true, UserAgent, false, TrafficOpsRequestTimeout)
+	to, _, err := toclient.New(config.ToURL, config.ToUser, config.ToPasswd, true, UserAgent, false, TrafficOpsRequestTimeout)
 	if err != nil {
 		newErr := fmt.Errorf("Could not store summary stats! Error logging in to %v: %v", config.ToURL, err)
 		log.Error(newErr)
 		return
 	}
-	err = to.AddSummaryStats(statsSummary)
+	_, err = to.DoAddSummaryStats(statsSummary)
 	if err != nil {
 		log.Error(err)
 	}
@@ -430,7 +430,7 @@ func writeSummaryStats(config StartupConfig, statsSummary tc.StatsSummary) {
 
 func getToData(config StartupConfig, init bool, configChan chan RunningConfig) {
 	var runningConfig RunningConfig
-	to, _, err := client.LoginWithAgent(config.ToURL, config.ToUser, config.ToPasswd, true, UserAgent, false, TrafficOpsRequestTimeout)
+	to, _, err := toclient.New(config.ToURL, config.ToUser, config.ToPasswd, true, UserAgent, false, TrafficOpsRequestTimeout)
 	if err != nil {
 		msg := fmt.Sprintf("Error logging in to %v: %v", config.ToURL, err)
 		if init {
@@ -440,7 +440,7 @@ func getToData(config StartupConfig, init bool, configChan chan RunningConfig) {
 		return
 	}
 
-	servers, err := to.Servers()
+	servers, _, err := to.GetServers()
 	if err != nil {
 		msg := fmt.Sprintf("Error getting server list from %v: %v ", config.ToURL, err)
 		if init {
@@ -502,7 +502,7 @@ func getToData(config StartupConfig, init bool, configChan chan RunningConfig) {
 		}
 	}
 
-	lastSummaryTimeStr, err := to.SummaryStatsLastUpdated("daily_maxgbps")
+	lastSummaryTimeStr, _, err := to.GetSummaryStatsLastUpdated("daily_maxgbps")
 	if err != nil {
 		errHndlr(err, ERROR)
 	} else {
