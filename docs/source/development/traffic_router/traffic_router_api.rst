@@ -89,3 +89,20 @@ The resulting cache location for a given client IP and delivery service.
 
 The resulting cache location using deep coverage zone file (deep caching) for a given client IP and delivery service.
 
+|
+
+**/crs/consistenthash/patternbased/regex?regex=<uri_encoded_regex>&requestPath=<uri_encoded_request_path>**
+
+The resulting path that will be used for consistent hashing when the given regex is applied to the given request path, as well as the query parameters used.
+
+|
+
+**/crs/consistenthash/patternbased/deliveryservice?deliveryServiceId=<deliveryServiceId>&requestPath=<uri_encoded_request_path>**
+
+The resulting path that will be used for consistent hashing for the given delivery service the given request path, as well as the query parameters used.
+
+|
+
+**/crs/consistenthash/cache/coveragezone/steering?ip=<ip>&deliveryServiceId=<deliveryServiceId>&requestPath=<uri_encoded_request_path>**
+
+The resulting cache of the consistent hash using coverage zone for a given client IP, delivery service and, request path -- used to test cache selection for steering delivery services.
