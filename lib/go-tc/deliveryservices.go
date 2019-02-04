@@ -33,138 +33,58 @@ import (
 
 const DefaultRoutingName = "cdn"
 
-// GetDeliveryServiceResponse is deprecated use DeliveryServicesResponse...
-type GetDeliveryServiceResponse struct {
-	Response []DeliveryService `json:"response"`
+// // DeliveryServicesResponse ...
+// type DeliveryServicesResponse struct {
+// 	Response []DeliveryService `json:"response"`
+// }
+
+// // CreateDeliveryServiceResponse ...
+// type CreateDeliveryServiceResponse struct {
+// 	Response []DeliveryService      `json:"response"`
+// 	Alerts   []DeliveryServiceAlert `json:"alerts"`
+// }
+
+// // CreateDeliveryServiceNullableResponse ...
+// type CreateDeliveryServiceNullableResponse struct {
+// 	Response []DeliveryServiceNullable `json:"response"`
+// 	Alerts   []DeliveryServiceAlert    `json:"alerts"`
+// }
+
+// // UpdateDeliveryServiceResponse ...
+// type UpdateDeliveryServiceResponse struct {
+// 	Response []DeliveryService      `json:"response"`
+// 	Alerts   []DeliveryServiceAlert `json:"alerts"`
+// }
+
+// // DeliveryServiceResponse ...
+// type DeliveryServiceResponse struct {
+// 	Response DeliveryService        `json:"response"`
+// 	Alerts   []DeliveryServiceAlert `json:"alerts"`
+// }
+
+// // DeleteDeliveryServiceResponse ...
+// type DeleteDeliveryServiceResponse struct {
+// 	Alerts []DeliveryServiceAlert `json:"alerts"`
+// }
+
+type DeliveryServiceNullable DeliveryServiceNullableV15
+
+type DeliveryServiceNullableV15 struct {
+	DeliveryServiceNullableV13
+	ConsistentHashRegex *string `json:"consistentHashRegex,omitempty"`
 }
 
-// DeliveryServicesResponse ...
-type DeliveryServicesResponse struct {
-	Response []DeliveryService `json:"response"`
-}
-
-// CreateDeliveryServiceResponse ...
-type CreateDeliveryServiceResponse struct {
-	Response []DeliveryService      `json:"response"`
-	Alerts   []DeliveryServiceAlert `json:"alerts"`
-}
-
-// CreateDeliveryServiceNullableResponse ...
-type CreateDeliveryServiceNullableResponse struct {
-	Response []DeliveryServiceNullable `json:"response"`
-	Alerts   []DeliveryServiceAlert    `json:"alerts"`
-}
-
-// UpdateDeliveryServiceResponse ...
-type UpdateDeliveryServiceResponse struct {
-	Response []DeliveryService      `json:"response"`
-	Alerts   []DeliveryServiceAlert `json:"alerts"`
-}
-
-// DeliveryServiceResponse ...
-type DeliveryServiceResponse struct {
-	Response DeliveryService        `json:"response"`
-	Alerts   []DeliveryServiceAlert `json:"alerts"`
-}
-
-// DeleteDeliveryServiceResponse ...
-type DeleteDeliveryServiceResponse struct {
-	Alerts []DeliveryServiceAlert `json:"alerts"`
-}
-
-type DeliveryService struct {
-	DeliveryServiceV12
-	DeepCachingType   DeepCachingType `json:"deepCachingType"`
-	FQPacingRate      int             `json:"fqPacingRate,omitempty"`
-	SigningAlgorithm  string          `json:"signingAlgorithm" db:"signing_algorithm"`
-	Tenant            string          `json:"tenant,omitempty"`
-	TRRequestHeaders  string          `json:"trRequestHeaders,omitempty"`
-	TRResponseHeaders string          `json:"trResponseHeaders,omitempty"`
-}
-
-type DeliveryServiceV12 struct {
-	DeliveryServiceV11
-}
-
-// DeliveryService ...
-// TODO move contents to DeliveryServiceV12, fix references, and remove
-type DeliveryServiceV11 struct {
-	Active                   bool                   `json:"active"`
-	AnonymousBlockingEnabled bool                   `json:"anonymousBlockingEnabled"`
-	CacheURL                 string                 `json:"cacheurl"`
-	CCRDNSTTL                int                    `json:"ccrDnsTtl"`
-	CDNID                    int                    `json:"cdnId"`
-	CDNName                  string                 `json:"cdnName"`
-	CheckPath                string                 `json:"checkPath"`
-	DeepCachingType          DeepCachingType        `json:"deepCachingType"`
-	DisplayName              string                 `json:"displayName"`
-	DNSBypassCname           string                 `json:"dnsBypassCname"`
-	DNSBypassIP              string                 `json:"dnsBypassIp"`
-	DNSBypassIP6             string                 `json:"dnsBypassIp6"`
-	DNSBypassTTL             int                    `json:"dnsBypassTtl"`
-	DSCP                     int                    `json:"dscp"`
-	EdgeHeaderRewrite        string                 `json:"edgeHeaderRewrite"`
-	ExampleURLs              []string               `json:"exampleURLs"`
-	GeoLimit                 int                    `json:"geoLimit"`
-	FQPacingRate             int                    `json:"fqPacingRate"`
-	GeoProvider              int                    `json:"geoProvider"`
-	GlobalMaxMBPS            int                    `json:"globalMaxMbps"`
-	GlobalMaxTPS             int                    `json:"globalMaxTps"`
-	HTTPBypassFQDN           string                 `json:"httpBypassFqdn"`
-	ID                       int                    `json:"id"`
-	InfoURL                  string                 `json:"infoUrl"`
-	InitialDispersion        float32                `json:"initialDispersion"`
-	IPV6RoutingEnabled       bool                   `json:"ipv6RoutingEnabled"`
-	LastUpdated              *TimeNoMod             `json:"lastUpdated" db:"last_updated"`
-	LogsEnabled              bool                   `json:"logsEnabled"`
-	LongDesc                 string                 `json:"longDesc"`
-	LongDesc1                string                 `json:"longDesc1"`
-	LongDesc2                string                 `json:"longDesc2"`
-	MatchList                []DeliveryServiceMatch `json:"matchList,omitempty"`
-	MaxDNSAnswers            int                    `json:"maxDnsAnswers"`
-	MidHeaderRewrite         string                 `json:"midHeaderRewrite"`
-	MissLat                  float64                `json:"missLat"`
-	MissLong                 float64                `json:"missLong"`
-	MultiSiteOrigin          bool                   `json:"multiSiteOrigin"`
-	OrgServerFQDN            string                 `json:"orgServerFqdn"`
-	ProfileDesc              string                 `json:"profileDescription"`
-	ProfileID                int                    `json:"profileId,omitempty"`
-	ProfileName              string                 `json:"profileName"`
-	Protocol                 int                    `json:"protocol"`
-	QStringIgnore            int                    `json:"qstringIgnore"`
-	RangeRequestHandling     int                    `json:"rangeRequestHandling"`
-	RegexRemap               string                 `json:"regexRemap"`
-	RegionalGeoBlocking      bool                   `json:"regionalGeoBlocking"`
-	RemapText                string                 `json:"remapText"`
-	RoutingName              string                 `json:"routingName"`
-	Signed                   bool                   `json:"signed"`
-	TypeID                   int                    `json:"typeId"`
-	Type                     DSType                 `json:"type"`
-	TRResponseHeaders        string                 `json:"trResponseHeaders"`
-	TenantID                 int                    `json:"tenantId,omitempty"`
-	XMLID                    string                 `json:"xmlId"`
-}
-
-type DeliveryServiceNullable struct {
-	DeliveryServiceNullableV12
-	DeepCachingType     *DeepCachingType `json:"deepCachingType" db:"deep_caching_type"`
-	FQPacingRate        *int             `json:"fqPacingRate,omitempty"`
-	SigningAlgorithm    *string          `json:"signingAlgorithm" db:"signing_algorithm"`
-	Tenant              *string          `json:"tenant,omitempty"`
-	TRResponseHeaders   *string          `json:"trResponseHeaders,omitempty"`
-	TRRequestHeaders    *string          `json:"trRequestHeaders,omitempty"`
-	ConsistentHashRegex *string          `json:"consistentHashRegex,omitempty"`
-}
-
-type DeliveryServiceNullableV12 struct {
+type DeliveryServiceNullableV13 struct {
 	DeliveryServiceNullableV11
+	DeepCachingType   *DeepCachingType `json:"deepCachingType" db:"deep_caching_type"`
+	FQPacingRate      *int             `json:"fqPacingRate,omitempty"`
+	SigningAlgorithm  *string          `json:"signingAlgorithm" db:"signing_algorithm"`
+	Tenant            *string          `json:"tenant,omitempty"`
+	TRResponseHeaders *string          `json:"trResponseHeaders,omitempty"`
+	TRRequestHeaders  *string          `json:"trRequestHeaders,omitempty"`
 }
 
-// DeliveryServiceNullable - a version of the deliveryservice that allows for all fields to be null
-// TODO move contents to DeliveryServiceNullableV12, fix references, and remove
 type DeliveryServiceNullableV11 struct {
-	// NOTE: the db: struct tags are used for testing to map to their equivalent database column (if there is one)
-	//
 	Active                   *bool                   `json:"active" db:"active"`
 	AnonymousBlockingEnabled *bool                   `json:"anonymousBlockingEnabled" db:"anonymous_blocking_enabled"`
 	CacheURL                 *string                 `json:"cacheurl" db:"cacheurl"`
@@ -224,13 +144,20 @@ type DeliveryServiceNullableV11 struct {
 }
 
 // NewDeliveryServiceNullableFromV12 creates a new V13 DS from a V12 DS, filling new fields with appropriate defaults.
-func NewDeliveryServiceNullableFromV12(ds DeliveryServiceNullableV12) DeliveryServiceNullable {
-	newDS := DeliveryServiceNullable{DeliveryServiceNullableV12: ds}
+func NewDeliveryServiceNullableFromV11(ds DeliveryServiceNullableV11) DeliveryServiceNullable {
+	newDS := DeliveryServiceNullable{}
+	newDS.DeliveryServiceNullableV11 = ds
 	newDS.Sanitize()
 	return newDS
 }
 
-func (ds *DeliveryServiceNullableV12) Sanitize() {
+func NewDeliveryServiceNullableFromV13(ds DeliveryServiceNullableV13) DeliveryServiceNullable {
+	newDS := DeliveryServiceNullable{DeliveryServiceNullableV13: ds}
+	newDS.Sanitize()
+	return newDS
+}
+
+func (ds *DeliveryServiceNullableV11) Sanitize() {
 	if ds.GeoLimitCountries != nil {
 		*ds.GeoLimitCountries = strings.ToUpper(strings.Replace(*ds.GeoLimitCountries, " ", "", -1))
 	}
@@ -286,7 +213,7 @@ func requiredIfMatchesTypeName(patterns []string, typeName string) func(interfac
 	}
 }
 
-func (ds *DeliveryServiceNullableV12) validateTypeFields(tx *sql.Tx) error {
+func (ds *DeliveryServiceNullableV11) validateTypeFields(tx *sql.Tx) error {
 	// Validate the TypeName related fields below
 	err := error(nil)
 	DNSRegexType := "^DNS.*$"
@@ -362,7 +289,7 @@ func ParseOrgServerFQDN(orgServerFQDN string) (*string, *string, *string, error)
 	return &protocol, &FQDN, port, nil
 }
 
-func (ds *DeliveryServiceNullableV12) Validate(tx *sql.Tx) error {
+func (ds *DeliveryServiceNullableV11) Validate(tx *sql.Tx) error {
 	ds.Sanitize()
 	isDNSName := validation.NewStringRule(govalidator.IsDNSName, "must be a valid hostname")
 	noPeriods := validation.NewStringRule(tovalidate.NoPeriods, "cannot contain periods")
@@ -391,7 +318,7 @@ func (ds *DeliveryServiceNullableV12) Validate(tx *sql.Tx) error {
 }
 
 func (ds *DeliveryServiceNullable) Sanitize() {
-	ds.DeliveryServiceNullableV12.Sanitize()
+	ds.DeliveryServiceNullableV13.Sanitize()
 	signedAlgorithm := SigningAlgorithmURLSig
 	if ds.Signed && (ds.SigningAlgorithm == nil || *ds.SigningAlgorithm == "") {
 		ds.SigningAlgorithm = &signedAlgorithm
@@ -413,7 +340,7 @@ func (ds *DeliveryServiceNullable) Validate(tx *sql.Tx) error {
 	errs := tovalidate.ToErrors(validation.Errors{
 		"deepCachingType": validation.Validate(ds.DeepCachingType, neverOrAlways),
 	})
-	if v12Err := ds.DeliveryServiceNullableV12.Validate(tx); v12Err != nil {
+	if v12Err := ds.DeliveryServiceNullableV11.Validate(tx); v12Err != nil {
 		errs = append(errs, v12Err)
 	}
 	if len(errs) == 0 {

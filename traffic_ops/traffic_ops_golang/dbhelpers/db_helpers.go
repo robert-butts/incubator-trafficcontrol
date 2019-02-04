@@ -164,3 +164,41 @@ func CDNExists(cdnName string, tx *sqlx.Tx) (bool, error) {
 	}
 	return true, nil
 }
+
+// GetDSTenantIDByID returns the tenant ID, whether the delivery service exists, and any error.
+// Note the id may be nil, even if true is returned, if the delivery service exists but its tenant_id field is null.
+func GetDSTenantIDByID(tx *sql.Tx, id int) (*int, bool, error) {
+	tenantID := (*int)(nil)
+	if err := tx.QueryRow(`SELECT tenant_id FROM deliveryservice where id = $1`, id).Scan(&tenantID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("querying tenant ID for delivery service ID '%v': %v", id, err)
+	}
+	return tenantID, true, nil
+}
+
+// GetDSTenantIDByName returns the tenant ID, whether the delivery service exists, and any error.
+// Note the id may be nil, even if true is returned, if the delivery service exists but its tenant_id field is null.
+func GetDSTenantIDByName(tx *sql.Tx, ds tc.DeliveryServiceName) (*int, bool, error) {
+	tenantID := (*int)(nil)
+	if err := tx.QueryRow(`SELECT tenant_id FROM deliveryservice where xml_id = $1`, ds).Scan(&tenantID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("querying tenant ID for delivery service name '%v': %v", ds, err)
+	}
+	return tenantID, true, nil
+}
+
+// GetDSNameFroMID loads the DeliveryService's xml_id from the database, from the ID. Returns whether the delivery service was found, and any error.
+func GetDSNameFroMID(tx *sql.Tx, id int) (string, bool, error) {
+	name := ""
+	if err := tx.QueryRow(`SELECT xml_id FROM deliveryservice where id = $1`, id).Scan(&name); err != nil {
+		if err == sql.ErrNoRows {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("querying xml_id for delivery service ID '%v': %v", id, err)
+	}
+	return name, true, nil
+}

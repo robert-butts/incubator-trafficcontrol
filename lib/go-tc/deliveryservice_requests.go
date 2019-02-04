@@ -29,24 +29,6 @@ import (
 // IDNoMod type is used to suppress JSON unmarshalling
 type IDNoMod int
 
-// DeliveryServiceRequest is used as part of the workflow to create,
-// modify, or delete a delivery service.
-type DeliveryServiceRequest struct {
-	AssigneeID      int             `json:"assigneeId,omitempty"`
-	Assignee        string          `json:"assignee,omitempty"`
-	AuthorID        IDNoMod         `json:"authorId"`
-	Author          string          `json:"author"`
-	ChangeType      string          `json:"changeType"`
-	CreatedAt       *TimeNoMod      `json:"createdAt"`
-	ID              int             `json:"id"`
-	LastEditedBy    string          `json:"lastEditedBy,omitempty"`
-	LastEditedByID  IDNoMod         `json:"lastEditedById,omitempty"`
-	LastUpdated     *TimeNoMod      `json:"lastUpdated"`
-	DeliveryService DeliveryService `json:"deliveryService"` // TODO version DeliveryServiceRequest
-	Status          RequestStatus   `json:"status"`
-	XMLID           string          `json:"-" db:"xml_id"`
-}
-
 // DeliveryServiceRequestNullable is used as part of the workflow to create,
 // modify, or delete a delivery service.
 type DeliveryServiceRequestNullable struct {

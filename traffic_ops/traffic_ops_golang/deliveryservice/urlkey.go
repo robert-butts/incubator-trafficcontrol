@@ -64,7 +64,7 @@ func GetURLKeysByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok {
-		dsTenantID, ok, err := GetDSTenantIDByIDTx(inf.Tx.Tx, inf.IntParams["id"])
+		dsTenantID, ok, err := dbhelpers.GetDSTenantIDByID(inf.Tx.Tx, inf.IntParams["id"])
 		if err != nil {
 			api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("checking tenant: "+err.Error()))
 			return
@@ -118,7 +118,7 @@ func GetURLKeysByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok {
-		dsTenantID, ok, err := GetDSTenantIDByNameTx(inf.Tx.Tx, ds)
+		dsTenantID, ok, err := dbhelpers.GetDSTenantIDByName(inf.Tx.Tx, ds)
 		if err != nil {
 			api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("checking tenant: "+err.Error()))
 			return
@@ -173,7 +173,7 @@ func CopyURLKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok {
-		dsTenantID, ok, err := GetDSTenantIDByNameTx(inf.Tx.Tx, ds)
+		dsTenantID, ok, err := dbhelpers.GetDSTenantIDByName(inf.Tx.Tx, ds)
 		if err != nil {
 			api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("checking tenant: "+err.Error()))
 			return
@@ -193,7 +193,7 @@ func CopyURLKeys(w http.ResponseWriter, r *http.Request) {
 		}
 
 		{
-			copyDSTenantID, ok, err := GetDSTenantIDByNameTx(inf.Tx.Tx, copyDS)
+			copyDSTenantID, ok, err := dbhelpers.GetDSTenantIDByName(inf.Tx.Tx, copyDS)
 			if err != nil {
 				api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("checking tenant: "+err.Error()))
 				return
@@ -253,7 +253,7 @@ func GenerateURLKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ok {
-		dsTenantID, ok, err := GetDSTenantIDByNameTx(inf.Tx.Tx, ds)
+		dsTenantID, ok, err := dbhelpers.GetDSTenantIDByName(inf.Tx.Tx, ds)
 		if err != nil {
 			api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("checking tenant: "+err.Error()))
 			return
