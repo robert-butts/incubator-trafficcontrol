@@ -1,4 +1,4 @@
-package riaksvc
+package pluginsecuredbriak
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one

@@ -28,14 +28,12 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
 
 	"github.com/basho/riak-go-client"
 	"github.com/lestrrat/go-jwx/jwk"
 )
 
-// CDNURIKeysBucket is the namespace or bucket used for CDN URI signing keys.
 const CDNURIKeysBucket = "cdn_uri_sig_keys"
 
 // URISignerKeyset is the container for the CDN URI signing keys
@@ -44,7 +42,7 @@ type URISignerKeyset struct {
 	Keys       []jwk.EssentialHeader `json:"keys"`
 }
 
-// endpoint handler for fetching uri signing keys from riak
+// getURIsignkeysHandler is the endpoint handler for fetching uri signing keys from the secure db
 func getURIsignkeysHandler(w http.ResponseWriter, r *http.Request) {
 	inf, userErr, sysErr, errCode := api.NewInfo(r, nil, nil)
 	if userErr != nil || sysErr != nil {
@@ -53,35 +51,30 @@ func getURIsignkeysHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusServiceUnavailable, errors.New("The RIAK service is unavailable"), errors.New("getting Riak SSL keys by host name: riak is not configured"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusServiceUnavailable, errors.New("The secure database is unavailable"), errors.New("getting uri signing keys: no secure database configured!"))
 		return
 	}
 
-	xmlID := inf.Params["xmlID"]
+	ds := tc.DeliveryServiceName(inf.Params["xmlID"])
 
-	if userErr, sysErr, errCode := tenant.Check(inf.User, xmlID, inf.Tx.Tx); userErr != nil || sysErr != nil {
+	if userErr, sysErr, errCode := tenant.Check(inf.User, string(ds), inf.Tx.Tx); userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
 	}
 
-	cluster, err := riaksvc.GetPooledCluster(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort)
+	key, found, err := sdb.GetURISigningKeys(inf.Tx.Tx, ds)
 	if err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("starting riak cluster: "+err.Error()))
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting uri signing keys from secure db: "+err.Error()))
 		return
 	}
-
-	ro, err := riaksvc.FetchObjectValues(xmlID, CDNURIKeysBucket, cluster)
-	if err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("fetching riak objects: "+err.Error()))
-		return
-	}
-	if len(ro) == 0 {
+	if !found {
 		api.WriteRespRaw(w, r, URISignerKeyset{})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(ro[0].Value)
+	w.Write(key)
 }
 
 // removeDeliveryServiceURIKeysHandler is the HTTP DELETE handler used to remove urisigning keys assigned to a delivery service.
@@ -93,13 +86,14 @@ func removeDeliveryServiceURIKeysHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusServiceUnavailable, errors.New("The RIAK service is unavailable"), errors.New("getting Riak SSL keys by host name: riak is not configured"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusServiceUnavailable, errors.New("The secure database is unavailable"), errors.New("removing  uri signing keys: no secure database configured!"))
 		return
 	}
 
-	xmlID := inf.Params["xmlID"]
-	if userErr, sysErr, errCode := tenant.Check(inf.User, xmlID, inf.Tx.Tx); userErr != nil || sysErr != nil {
+	ds := tc.DeliveryServiceName(inf.Params["xmlID"])
+	if userErr, sysErr, errCode := tenant.Check(inf.User, string(ds), inf.Tx.Tx); userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
 	}

@@ -18,13 +18,14 @@ import (
 	"encoding/json"
 
 	"github.com/apache/trafficcontrol/lib/go-log"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 )
 
 func init() {
 	AddPlugin(10000, Funcs{onStartup: helloSharedConfigStartup})
 }
 
-func helloSharedConfigStartup(d StartupData) {
+func helloSharedConfigStartup(d iplugin.StartupData) {
 	if b, err := json.Marshal(d.SharedCfg); err == nil {
 		log.Debugln("Hello! This is a shared plugin data config! Your shared plugin config is: " + string(b))
 	} else {

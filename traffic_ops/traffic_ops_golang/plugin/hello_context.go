@@ -16,18 +16,19 @@ package plugin
 
 import (
 	"github.com/apache/trafficcontrol/lib/go-log"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 )
 
 func init() {
 	AddPlugin(10000, Funcs{onStartup: helloCtxStart, onRequest: helloCtxOnReq})
 }
 
-func helloCtxStart(d StartupData) {
+func helloCtxStart(d iplugin.StartupData) {
 	*d.Ctx = 42
 	log.Debugf("Hello! This is a context plugin! Start set context: %+v\n", *d.Ctx)
 }
 
-func helloCtxOnReq(d OnRequestData) IsRequestHandled {
+func helloCtxOnReq(d iplugin.OnRequestData) IsRequestHandled {
 	ctx, ok := (*d.Ctx).(int)
 	log.Debugf("Hello! This is a context plugin! On Request got context: %+v %+v\n", ok, ctx)
 	return RequestUnhandled

@@ -34,7 +34,7 @@ import (
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/deliveryservice"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/securedb"
 
 	"github.com/lib/pq"
 )
@@ -45,11 +45,27 @@ func RefreshDNSSECKeys(w http.ResponseWriter, r *http.Request) {
 		noTx := (*sql.Tx)(nil) // make a variable instead of passing nil directly, to reduce copy-paste errors
 		if err != nil {
 			api.HandleErr(w, r, noTx, http.StatusInternalServerError, nil, errors.New("RefresHDNSSECKeys getting db from context: "+err.Error()))
+			unsetInDNSSECKeyRefresh()
 			return
 		}
+
 		cfg, err := api.GetConfig(r.Context())
 		if err != nil {
 			api.HandleErr(w, r, noTx, http.StatusInternalServerError, nil, errors.New("RefresHDNSSECKeys getting config from context: "+err.Error()))
+			unsetInDNSSECKeyRefresh()
+			return
+		}
+
+		plugins, err := api.GetPlugins(r.Context())
+		if err != nil {
+			api.HandleErr(w, r, noTx, http.StatusInternalServerError, nil, errors.New("RefresHDNSSECKeys getting plugins from context: "+err.Error()))
+			unsetInDNSSECKeyRefresh()
+			return
+		}
+
+		sdb := plugins.SecureDB()
+		if sdb == nil {
+			api.HandleErr(w, r, noTx, http.StatusInternalServerError, nil, errors.New("RefreshDNSSECKeys: no secure database configured!"))
 			return
 		}
 
@@ -57,7 +73,7 @@ func RefreshDNSSECKeys(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			api.HandleErr(w, r, noTx, http.StatusInternalServerError, nil, errors.New("RefresHDNSSECKeys beginning tx: "+err.Error()))
 		}
-		go doDNSSECKeyRefresh(tx, cfg) // doDNSSECKeyRefresh takes ownership of tx and MUST close it.
+		go doDNSSECKeyRefresh(sdb, tx, cfg) // doDNSSECKeyRefresh takes ownership of tx and MUST close it.
 	} else {
 		log.Infoln("RefreshDNSSECKeys called, while server was concurrently executing a refresh, doing nothing")
 	}
@@ -74,7 +90,7 @@ const DNSSECKeyRefreshDefaultZSKExpiration = time.Duration(30) * time.Hour * 24
 // doDNSSECKeyRefresh refreshes the CDN's DNSSEC keys, as necessary.
 // This takes ownership of tx, and MUST call `tx.Close()`.
 // This SHOULD only be called if setInDNSSECKeyRefresh() returned true, in which case this MUST call unsetInDNSSECKeyRefresh() before returning.
-func doDNSSECKeyRefresh(tx *sql.Tx, cfg *config.Config) {
+func doDNSSECKeyRefresh(sdb securedb.SecureDB, tx *sql.Tx, cfg *config.Config) {
 	doCommit := true
 	defer func() {
 		if doCommit {
@@ -123,13 +139,13 @@ func doDNSSECKeyRefresh(tx *sql.Tx, cfg *config.Config) {
 	}
 
 	for _, cdnInf := range cdnDNSSECKeyParams {
-		keys, ok, err := riaksvc.GetDNSSECKeys(string(cdnInf.CDNName), tx, cfg.RiakAuthOptions, cfg.RiakPort) // TODO get all in a map beforehand
+		keys, ok, err := sdb.GetDNSSECKeys(tx, cdnInf.CDNName) // TODO get all in a map beforehand
 		if err != nil {
-			log.Warnln("refreshing DNSSEC Keys: getting cdn '" + string(cdnInf.CDNName) + "' keys from Riak, skipping: " + err.Error())
+			log.Warnln("refreshing DNSSEC Keys: getting cdn '" + string(cdnInf.CDNName) + "' keys from secure db, skipping: " + err.Error())
 			continue
 		}
 		if !ok {
-			log.Warnln("refreshing DNSSEC Keys: cdn '" + string(cdnInf.CDNName) + "' has no keys in Riak, skipping")
+			log.Warnln("refreshing DNSSEC Keys: cdn '" + string(cdnInf.CDNName) + "' has no keys in secure db, skipping")
 			continue
 		}
 
@@ -253,8 +269,8 @@ func doDNSSECKeyRefresh(tx *sql.Tx, cfg *config.Config) {
 			}
 		}
 		if updatedAny {
-			if err := riaksvc.PutDNSSECKeys(keys, string(cdnInf.CDNName), tx, cfg.RiakAuthOptions, cfg.RiakPort); err != nil {
-				log.Errorln("refreshing DNSSEC Keys: putting keys into Riak for cdn '" + string(cdnInf.CDNName) + "': " + err.Error())
+			if err := sdb.PutDNSSECKeys(tx, keys, cdnInf.CDNName); err != nil {
+				log.Errorln("refreshing DNSSEC Keys: putting keys into secure db for cdn '" + string(cdnInf.CDNName) + "': " + err.Error())
 			}
 		}
 	}

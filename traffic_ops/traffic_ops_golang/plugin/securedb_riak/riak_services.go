@@ -1,4 +1,4 @@
-package riaksvc
+package pluginsecuredbriak
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -20,12 +20,9 @@ package riaksvc
  */
 
 import (
-	"crypto/tls"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"reflect"
 	"runtime"
 	"sort"
@@ -51,8 +48,6 @@ var (
 	clusterServers []ServerAddr
 	sharedCluster  *riak.Cluster
 	clusterMutex   sync.Mutex
-
-	healthCheckInterval time.Duration
 )
 
 type AuthOptions riak.AuthOptions
@@ -74,7 +69,7 @@ func (ri RiakStorageCluster) Stop() error {
 	return ri.Cluster.Stop()
 }
 
-// Start ...
+// start ...
 func (ri RiakStorageCluster) Start() error {
 	return ri.Cluster.Start()
 }
@@ -82,46 +77,6 @@ func (ri RiakStorageCluster) Start() error {
 // Execute ...
 func (ri RiakStorageCluster) Execute(command riak.Command) error {
 	return ri.Cluster.Execute(command)
-}
-
-func GetRiakConfig(riakConfigFile string) (bool, *riak.AuthOptions, error) {
-	riakConfString, err := ioutil.ReadFile(riakConfigFile)
-	if err != nil {
-		return false, nil, fmt.Errorf("reading riak conf '%v': %v", riakConfigFile, err)
-	}
-
-	riakConfBytes := []byte(riakConfString)
-
-	rconf := &riak.AuthOptions{}
-	rconf.TlsConfig = &tls.Config{}
-	err = json.Unmarshal(riakConfBytes, &rconf)
-	if err != nil {
-		return false, nil, fmt.Errorf("Unmarshaling riak conf '%v': %v", riakConfigFile, err)
-	}
-
-	type config struct {
-		Hci string `json:"HealthCheckInterval"`
-	}
-
-	var checkconfig config
-	err = json.Unmarshal(riakConfBytes, &checkconfig)
-	if err == nil {
-		hci, _ := time.ParseDuration(checkconfig.Hci)
-		if 0 < hci {
-			healthCheckInterval = hci
-		}
-	} else {
-		log.Infoln("Error unmarshalling riak config options: " + err.Error())
-	}
-
-	if healthCheckInterval <= 0 {
-		healthCheckInterval = DefaultHealthCheckInterval
-		log.Infoln("HeathCheckInterval override")
-	}
-
-	log.Infoln("Riak health check interval set to:", healthCheckInterval)
-
-	return true, rconf, nil
 }
 
 // deletes an object from riak storage
@@ -250,7 +205,7 @@ WHERE t.name = 'RIAK' AND st.name = 'ONLINE'
 	return servers, nil
 }
 
-func GetRiakCluster(servers []ServerAddr, authOptions *riak.AuthOptions) (*riak.Cluster, error) {
+func GetRiakCluster(servers []ServerAddr, authOptions *riak.AuthOptions, healthCheckInterval time.Duration) (*riak.Cluster, error) {
 	if authOptions == nil {
 		return nil, errors.New("ERROR: no riak auth information from riak.conf, cannot authenticate to any riak servers")
 	}
@@ -282,15 +237,15 @@ func GetRiakCluster(servers []ServerAddr, authOptions *riak.AuthOptions) (*riak.
 	return cluster, err
 }
 
-func GetRiakStorageCluster(servers []ServerAddr, authOptions *riak.AuthOptions) (StorageCluster, error) {
-	cluster, err := GetRiakCluster(servers, authOptions)
+func GetRiakStorageCluster(servers []ServerAddr, authOptions *riak.AuthOptions, healthCheckInterval time.Duration) (StorageCluster, error) {
+	cluster, err := GetRiakCluster(servers, authOptions, healthCheckInterval)
 	if err != nil {
 		return nil, err
 	}
 	return RiakStorageCluster{Cluster: cluster}, nil
 }
 
-func GetPooledCluster(tx *sql.Tx, authOptions *riak.AuthOptions, riakPort *uint) (StorageCluster, error) {
+func GetPooledCluster(tx *sql.Tx, authOptions *riak.AuthOptions, riakPort *uint, healthCheckInterval time.Duration) (StorageCluster, error) {
 	clusterMutex.Lock()
 	defer clusterMutex.Unlock()
 
@@ -319,7 +274,7 @@ func GetPooledCluster(tx *sql.Tx, authOptions *riak.AuthOptions, riakPort *uint)
 	}
 
 	if tryLoad {
-		newcluster, err := GetRiakCluster(newservers, authOptions)
+		newcluster, err := GetRiakCluster(newservers, authOptions, healthCheckInterval)
 		if err == nil {
 			if err := newcluster.Start(); err == nil {
 				log.Infoln("New cluster started")
@@ -348,8 +303,8 @@ func GetPooledCluster(tx *sql.Tx, authOptions *riak.AuthOptions, riakPort *uint)
 	return RiakStorageCluster{Cluster: cluster}, nil
 }
 
-func WithCluster(tx *sql.Tx, authOpts *riak.AuthOptions, riakPort *uint, f func(StorageCluster) error) error {
-	cluster, err := GetPooledCluster(tx, authOpts, riakPort)
+func WithCluster(tx *sql.Tx, authOpts *riak.AuthOptions, riakPort *uint, healthCheckInterval time.Duration, f func(StorageCluster) error) error {
+	cluster, err := GetPooledCluster(tx, authOpts, riakPort, healthCheckInterval)
 	if err != nil {
 		return errors.New("getting riak pooled cluster: " + err.Error())
 	}

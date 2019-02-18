@@ -16,12 +16,13 @@ package plugin
 
 import (
 	"github.com/apache/trafficcontrol/lib/go-log"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 )
 
 func init() {
 	AddPlugin(10000, Funcs{onStartup: helloStartup})
 }
 
-func helloStartup(d StartupData) {
+func helloStartup(d iplugin.StartupData) {
 	log.Debugln("Hello! This is a startup plugin! Config Version: " + d.AppCfg.Version)
 }

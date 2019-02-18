@@ -43,9 +43,8 @@ type Config struct {
 	ConfigTrafficOpsGolang `json:"traffic_ops_golang"`
 	DB                     ConfigDatabase `json:"db"`
 	Secrets                []string       `json:"secrets"`
-	// NOTE: don't care about any other fields for now..
+	// RiakAuthOptions is deprecated. Use the Riak plugin config instead.
 	RiakAuthOptions *riak.AuthOptions
-	RiakEnabled     bool
 	ConfigLDAP      *ConfigLDAP
 	LDAPEnabled     bool
 	LDAPConfPath    string `json:"ldap_conf_location"`
@@ -86,7 +85,8 @@ type ConfigTrafficOpsGolang struct {
 	PluginSharedConfig       map[string]interface{}     `json:"plugin_shared_config"`
 	ProfilingEnabled         bool                       `json:"profiling_enabled"`
 	ProfilingLocation        string                     `json:"profiling_location"`
-	RiakPort                 *uint                      `json:"riak_port"`
+	// RiakPort is deprecated. Use the Riak plugin config instead.
+	RiakPort *uint `json:"riak_port"`
 
 	// CRConfigUseRequestHost is whether to use the client request host header in the CRConfig. If false, uses the tm.url parameter.
 	// This defaults to false. Traffic Ops used to always use the host header, setting this true will resume that legacy behavior.
@@ -165,7 +165,6 @@ func LoadCdnConfig(cdnConfPath string) (Config, error) {
 }
 
 // LoadConfig - reads the config file into the Config struct
-
 func LoadConfig(cdnConfPath string, dbConfPath string, riakConfPath string, appVersion string) (Config, []error, bool) {
 	// load cdn.conf
 	cfg, err := LoadCdnConfig(cdnConfPath)
@@ -189,7 +188,7 @@ func LoadConfig(cdnConfPath string, dbConfPath string, riakConfPath string, appV
 	}
 
 	if riakConfPath != "" {
-		cfg.RiakEnabled, cfg.RiakAuthOptions, err = riaksvc.GetRiakConfig(riakConfPath)
+		cfg.RiakAuthOptions, err = riaksvc.GetRiakConfig(riakConfPath)
 		if err != nil {
 			return Config{}, []error{fmt.Errorf("parsing config '%s': %v", riakConfPath, err)}, BlockStartup
 		}

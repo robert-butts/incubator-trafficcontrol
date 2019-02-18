@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 
 	"github.com/apache/trafficcontrol/lib/go-log"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 )
 
 func init() {
@@ -39,7 +40,7 @@ func helloConfigLoad(b json.RawMessage) interface{} {
 	return &cfg
 }
 
-func helloConfigStartup(d StartupData) {
+func helloConfigStartup(d iplugin.StartupData) {
 	if d.Cfg == nil {
 		log.Debugln("Hello! This is a config plugin! Unfortunately, your config is not set properly.")
 	}

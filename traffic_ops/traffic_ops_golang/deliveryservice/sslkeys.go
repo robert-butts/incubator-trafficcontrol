@@ -20,14 +20,11 @@ package deliveryservice
  */
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
 )
 
@@ -48,7 +45,7 @@ func GenerateSSLKeys(w http.ResponseWriter, r *http.Request) {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
 	}
-	if err := generatePutRiakKeys(req, inf.Tx.Tx, inf.Config); err != nil {
+	if err := generatePutRiakKeys(inf, req); err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("generating and putting SSL keys: "+err.Error()))
 		return
 	}
@@ -61,7 +58,12 @@ func GenerateSSLKeys(w http.ResponseWriter, r *http.Request) {
 
 // generatePutRiakKeys generates a certificate, csr, and key from the given request, and insert it into the Riak key database.
 // The req MUST be validated, ensuring required fields exist.
-func generatePutRiakKeys(req tc.DeliveryServiceGenSSLKeysReq, tx *sql.Tx, cfg *config.Config) error {
+func generatePutRiakKeys(inf *api.APIInfo, req tc.DeliveryServiceGenSSLKeysReq) error {
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		return errors.New("generating put riak keys: no secure database configured!")
+	}
+
 	dsSSLKeys := tc.DeliveryServiceSSLKeys{
 		CDN:             *req.CDN,
 		DeliveryService: *req.DeliveryService,
@@ -79,7 +81,7 @@ func generatePutRiakKeys(req tc.DeliveryServiceGenSSLKeysReq, tx *sql.Tx, cfg *c
 		return errors.New("generating certificate: " + err.Error())
 	}
 	dsSSLKeys.Certificate = tc.DeliveryServiceSSLKeysCertificate{Crt: string(crt), Key: string(key), CSR: string(csr)}
-	if err := riaksvc.PutDeliveryServiceSSLKeysObj(dsSSLKeys, tx, cfg.RiakAuthOptions, cfg.RiakPort); err != nil {
+	if err := sdb.PutDeliveryServiceSSLKeysObj(inf.Tx.Tx, dsSSLKeys); err != nil {
 		return errors.New("putting riak keys: " + err.Error())
 	}
 	return nil

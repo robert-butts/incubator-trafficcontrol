@@ -30,7 +30,6 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
 )
 
@@ -46,10 +45,13 @@ func AddSSLKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer inf.Close()
-	if !inf.Config.RiakEnabled {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("adding SSL keys to Riak for delivery service: Riak is not configured"))
+
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("adding SSL keys to secure db for delivery service: no secure database configured!"))
 		return
 	}
+
 	req := tc.DeliveryServiceAddSSLKeysReq{}
 	if err := api.Parse(r.Body, inf.Tx.Tx, &req); err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusBadRequest, errors.New("parsing request: "+err.Error()), nil)
@@ -74,8 +76,8 @@ func AddSSLKeys(w http.ResponseWriter, r *http.Request) {
 		Version:         *req.Version,
 		Certificate:     *req.Certificate,
 	}
-	if err := riaksvc.PutDeliveryServiceSSLKeysObj(dsSSLKeys, inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort); err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("putting SSL keys in Riak for delivery service '"+*req.DeliveryService+"': "+err.Error()))
+	if err := sdb.PutDeliveryServiceSSLKeysObj(inf.Tx.Tx, dsSSLKeys); err != nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("putting SSL keys in secure db for delivery service '"+*req.DeliveryService+"': "+err.Error()))
 		return
 	}
 	if err := updateSSLKeyVersion(*req.DeliveryService, req.Version.ToInt64(), inf.Tx.Tx); err != nil {
@@ -97,11 +99,6 @@ func GetSSLKeysByHostName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer inf.Close()
-
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusServiceUnavailable, errors.New("the Riak service is unavailable"), errors.New("getting SSL keys from Riak by host name: Riak is not configured"))
-		return
-	}
 
 	hostName := inf.Params["hostname"]
 	domainName := ""
@@ -148,12 +145,7 @@ func GetSSLKeysByXMLID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer inf.Close()
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusServiceUnavailable, errors.New("the Riak service is unavailable"), errors.New("getting SSL keys from Riak by xml id: Riak is not configured"))
-		return
-	}
-	xmlID := inf.Params["xmlid"]
-	getSSLKeysByXMLIDHelper(xmlID, inf, w, r)
+	getSSLKeysByXMLIDHelper(inf.Params["xmlid"], inf, w, r)
 }
 
 func getSSLKeysByXMLIDHelper(xmlID string, inf *api.APIInfo, w http.ResponseWriter, r *http.Request) {
@@ -163,7 +155,14 @@ func getSSLKeysByXMLIDHelper(xmlID string, inf *api.APIInfo, w http.ResponseWrit
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
 	}
-	keyObj, ok, err := riaksvc.GetDeliveryServiceSSLKeysObj(xmlID, version, inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort)
+
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting ssl keys for delivery service: no secure database configured!"))
+		return
+	}
+
+	keyObj, ok, err := sdb.GetDeliveryServiceSSLKeysObj(inf.Tx.Tx, tc.DeliveryServiceName(xmlID), version)
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting ssl keys: "+err.Error()))
 		return
@@ -214,16 +213,19 @@ func DeleteSSLKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer inf.Close()
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deliveryservice.DeleteSSLKeys: Riak is not configured"))
+
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deleting ssl keys for delivery service: no secure database configured!"))
 		return
 	}
+
 	xmlID := inf.Params["xmlid"]
 	if userErr, sysErr, errCode := tenant.Check(inf.User, xmlID, inf.Tx.Tx); userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
 	}
-	if err := riaksvc.DeleteDSSSLKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, xmlID, inf.Params["version"]); err != nil {
+	if err := sdb.DeleteDSSSLKeys(inf.Tx.Tx, tc.DeliveryServiceName(xmlID), inf.Params["version"]); err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deliveryservice.DeleteSSLKeys: deleting SSL keys: "+err.Error()))
 		return
 	}
@@ -330,10 +332,10 @@ func verifyCertificate(certificate string, rootCA string) (string, bool, error) 
 		block := &pem.Block{Type: "CERTIFICATE", Bytes: link.Raw}
 		pemEncodedChain += string(pem.EncodeToMemory(block))
 	}
-   
-  	if len(pemEncodedChain) < 1 {
+
+	if len(pemEncodedChain) < 1 {
 		return "", false, errors.New("Invalid empty certicate chain in request")
-  	}
+	}
 
 	return pemEncodedChain, false, nil
 }

@@ -37,6 +37,7 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-util"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/auth"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tocookie"
 
 	"github.com/jmoiron/sqlx"
@@ -47,6 +48,7 @@ const DBContextKey = "db"
 const ConfigContextKey = "context"
 const ReqIDContextKey = "reqid"
 const APIRespWrittenKey = "respwritten"
+const PluginsContextKey = "plugins"
 
 // WriteResp takes any object, serializes it as JSON, and writes that to w. Any errors are logged and written to w via tc.GetHandleErrorsFunc.
 // This is a helper for the common case; not using this in unusual cases is perfectly acceptable.
@@ -288,6 +290,7 @@ type APIInfo struct {
 	ReqID     uint64
 	Tx        *sqlx.Tx
 	Config    *config.Config
+	Plugins   iplugin.Plugins
 }
 
 // NewInfo get and returns the context info needed by handlers. It also returns any user error, any system error, and the status code which should be returned to the client if an error occurred.
@@ -332,6 +335,10 @@ func NewInfo(r *http.Request, requiredParams []string, intParamNames []string) (
 	if err != nil {
 		return &APIInfo{Tx: &sqlx.Tx{}}, errors.New("getting reqID: " + err.Error()), nil, http.StatusInternalServerError
 	}
+	plugins, err := GetPlugins(r.Context())
+	if err != nil {
+		return &APIInfo{Tx: &sqlx.Tx{}}, errors.New("getting plugins: " + err.Error()), nil, http.StatusInternalServerError
+	}
 
 	user, err := auth.GetCurrentUser(r.Context())
 	if err != nil {
@@ -353,6 +360,7 @@ func NewInfo(r *http.Request, requiredParams []string, intParamNames []string) (
 		IntParams: intParams,
 		User:      user,
 		Tx:        tx,
+		Plugins:   plugins,
 	}, nil, nil, http.StatusOK
 }
 
@@ -403,6 +411,19 @@ func GetConfig(ctx context.Context) (*config.Config, error) {
 		}
 	}
 	return nil, errors.New("No config found in Context")
+}
+
+func GetPlugins(ctx context.Context) (iplugin.Plugins, error) {
+	val := ctx.Value(PluginsContextKey)
+	if val != nil {
+		switch v := val.(type) {
+		case iplugin.Plugins:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("Plugins found with bad type: %T", v)
+		}
+	}
+	return nil, errors.New("No plugins found in Context")
 }
 
 func getReqID(ctx context.Context) (uint64, error) {

@@ -16,6 +16,8 @@ package plugin
 
 import (
 	"strings"
+
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 )
 
 func init() {
@@ -24,7 +26,7 @@ func init() {
 
 const HelloPath = "/_hello"
 
-func hello(d OnRequestData) IsRequestHandled {
+func hello(d iplugin.OnRequestData) IsRequestHandled {
 	if !strings.HasPrefix(d.R.URL.Path, HelloPath) {
 		return RequestUnhandled
 	}

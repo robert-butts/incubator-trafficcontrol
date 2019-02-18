@@ -23,6 +23,7 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 )
 
 // The proxy plugin reverse-proxies to other HTTP services, as configured.
@@ -71,7 +72,7 @@ func proxyLoad(b json.RawMessage) interface{} {
 	return &cfg
 }
 
-func proxyOnReq(d OnRequestData) IsRequestHandled {
+func proxyOnReq(d iplugin.OnRequestData) IsRequestHandled {
 	if d.Cfg == nil {
 		return RequestUnhandled
 	}
@@ -91,7 +92,7 @@ func proxyOnReq(d OnRequestData) IsRequestHandled {
 	return RequestUnhandled
 }
 
-func proxyHandle(w http.ResponseWriter, r *http.Request, d OnRequestData, proxyURI *url.URL) IsRequestHandled {
+func proxyHandle(w http.ResponseWriter, r *http.Request, d iplugin.OnRequestData, proxyURI *url.URL) IsRequestHandled {
 	_, userErr, sysErr, errCode := api.GetUserFromReq(w, r, d.AppCfg.Secrets[0]) // require login
 	if userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, nil, errCode, userErr, sysErr)

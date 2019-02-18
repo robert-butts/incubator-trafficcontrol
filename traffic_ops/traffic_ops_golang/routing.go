@@ -32,7 +32,7 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/plugin"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 
 	"github.com/jmoiron/sqlx"
 )
@@ -75,7 +75,7 @@ type ServerData struct {
 	config.Config
 	DB        *sqlx.DB
 	Profiling *bool // Yes this is a field in the config but we want to live reload this value and NOT the entire config
-	Plugins   plugin.Plugins
+	Plugins   iplugin.Plugins
 }
 
 // CompiledRoute ...
@@ -186,7 +186,7 @@ func Handler(
 	db *sqlx.DB,
 	cfg *config.Config,
 	getReqID func() uint64,
-	plugins plugin.Plugins,
+	plugins iplugin.Plugins,
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
@@ -203,12 +203,13 @@ func Handler(
 	ctx = context.WithValue(ctx, api.DBContextKey, db)
 	ctx = context.WithValue(ctx, api.ConfigContextKey, cfg)
 	ctx = context.WithValue(ctx, api.ReqIDContextKey, reqID)
+	ctx = context.WithValue(ctx, api.PluginsContextKey, plugins)
 
 	// plugins have no pre-parsed path params, but add an empty map so they can use the api helper funcs that require it.
 	pluginCtx := context.WithValue(ctx, api.PathParamsKey, map[string]string{})
 	pluginReq := r.WithContext(pluginCtx)
 
-	onReqData := plugin.OnRequestData{Data: plugin.Data{RequestID: reqID, AppCfg: *cfg}, W: w, R: pluginReq}
+	onReqData := iplugin.OnRequestData{Data: iplugin.Data{RequestID: reqID, AppCfg: *cfg}, W: w, R: pluginReq}
 	if handled := plugins.OnRequest(onReqData); handled {
 		return
 	}

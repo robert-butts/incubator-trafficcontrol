@@ -31,7 +31,6 @@ import (
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/dbhelpers"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/deliveryservice"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 )
 
 const DefaultKSKTTLSeconds = 60
@@ -46,6 +45,12 @@ func GenerateKSK(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer inf.Close()
+
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("generating cdn ksk: no secure database configured!"))
+		return
+	}
 
 	cdnName := tc.CDNName(inf.Params["name"])
 	req := tc.CDNGenerateKSKReq{}
@@ -78,13 +83,13 @@ func GenerateKSK(w http.ResponseWriter, r *http.Request) {
 		multiplier = &mult
 	}
 
-	dnssecKeys, ok, err := riaksvc.GetDNSSECKeys(string(cdnName), inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort)
+	dnssecKeys, ok, err := sdb.GetDNSSECKeys(inf.Tx.Tx, cdnName)
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting CDN DNSSEC keys: "+err.Error()))
 		return
 	}
 	if !ok {
-		log.Warnln("Generating CDN '" + string(cdnName) + "' KSK: no keys found in Riak, generating and inserting new key anyway")
+		log.Warnln("Generating CDN '" + string(cdnName) + "' KSK: no keys found in secure db, generating and inserting new key anyway")
 	}
 
 	isKSK := true
@@ -96,7 +101,7 @@ func GenerateKSK(w http.ResponseWriter, r *http.Request) {
 	}
 	dnssecKeys[string(cdnName)] = newKey
 
-	if err := riaksvc.PutDNSSECKeys(dnssecKeys, string(cdnName), inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort); err != nil {
+	if err := sdb.PutDNSSECKeys(inf.Tx.Tx, dnssecKeys, cdnName); err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("putting CDN DNSSEC keys: "+err.Error()))
 		return
 	}

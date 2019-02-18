@@ -30,7 +30,6 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/dbhelpers"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
 )
 
@@ -42,8 +41,9 @@ func GetURLKeysByID(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deliveryservice.DeleteSSLKeys: Riak is not configured!"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("getting url keys by id: no secure database configured!"))
 		return
 	}
 
@@ -84,9 +84,9 @@ func GetURLKeysByID(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	keys, ok, err := riaksvc.GetURLSigKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, ds)
+	keys, ok, err := sdb.GetURLSigKeys(inf.Tx.Tx, ds)
 	if err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting URL Sig keys from riak: "+err.Error()))
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting URL Sig keys from secure db: "+err.Error()))
 		return
 	}
 	if !ok {
@@ -104,8 +104,9 @@ func GetURLKeysByName(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deliveryservice.DeleteSSLKeys: Riak is not configured!"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("getting url keys by name: no secure database configured!"))
 		return
 	}
 
@@ -138,9 +139,9 @@ func GetURLKeysByName(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	keys, ok, err := riaksvc.GetURLSigKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, ds)
+	keys, ok, err := sdb.GetURLSigKeys(inf.Tx.Tx, ds)
 	if err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting URL Sig keys from riak: "+err.Error()))
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting URL Sig keys from secure db: "+err.Error()))
 		return
 	}
 	if !ok {
@@ -158,8 +159,9 @@ func CopyURLKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deliveryservice.DeleteSSLKeys: Riak is not configured!"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("copying url keys: no secure database configured!"))
 		return
 	}
 
@@ -214,9 +216,9 @@ func CopyURLKeys(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	keys, ok, err := riaksvc.GetURLSigKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, copyDS)
+	keys, ok, err := sdb.GetURLSigKeys(inf.Tx.Tx, copyDS)
 	if err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting URL Sig keys from riak: "+err.Error()))
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting URL Sig keys from secure db: "+err.Error()))
 		return
 	}
 	if !ok {
@@ -224,7 +226,7 @@ func CopyURLKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := riaksvc.PutURLSigKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, ds, keys); err != nil {
+	if err := sdb.PutURLSigKeys(inf.Tx.Tx, ds, keys); err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("setting URL Sig keys for '"+string(ds)+" copied from "+string(copyDS)+": "+err.Error()))
 		return
 	}
@@ -239,8 +241,9 @@ func GenerateURLKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("deliveryservice.DeleteSSLKeys: Riak is not configured!"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("generating url keys: no secure database configured!"))
 		return
 	}
 
@@ -278,7 +281,7 @@ func GenerateURLKeys(w http.ResponseWriter, r *http.Request) {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("generating URL sig keys: "+err.Error()))
 	}
 
-	if err := riaksvc.PutURLSigKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, ds, keys); err != nil {
+	if err := sdb.PutURLSigKeys(inf.Tx.Tx, ds, keys); err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("setting URL Sig keys for '"+string(ds)+": "+err.Error()))
 		return
 	}

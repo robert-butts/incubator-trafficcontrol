@@ -166,17 +166,17 @@ func checkNilOrEmpty(s *string) bool {
 	return s == nil || *s == ""
 }
 
-type RiakPingResp struct {
+type SDBPingResp struct {
 	Status string `json:"status"`
 	Server string `json:"server"`
 }
 
-// DNSSECKeys is the DNSSEC keys as stored in Riak, plus the DS record text.
+// DNSSECKeys is the DNSSEC keys as stored in the secure db, plus the DS record text.
 type DNSSECKeys map[string]DNSSECKeySet
 
-// DNSSECKeysV11 is the DNSSEC keys object stored in Riak. The map key strings are both DeliveryServiceNames and CDNNames.
+// DNSSECKeysV11 is the DNSSEC keys object stored in the secure db. The map key strings are both DeliveryServiceNames and CDNNames.
 
-type DNSSECKeysRiak DNSSECKeysV11
+type DNSSECKeysSDB DNSSECKeysV11
 
 type DNSSECKeysV11 map[string]DNSSECKeySetV11
 
@@ -185,7 +185,7 @@ type DNSSECKeySet struct {
 	KSK []DNSSECKey `json:"ksk"`
 }
 
-// DNSSECKeyDSRecordRiak is a DNSSEC key set (ZSK and KSK), as stored in Riak.
+// DNSSECKeyDSRecordSDB is a DNSSEC key set (ZSK and KSK), as stored in the secure db.
 // This is specifically the key data, without the DS record text (which can be computed), and is also the format used in API 1.1 through 1.3.
 type DNSSECKeySetV11 struct {
 	ZSK []DNSSECKeyV11 `json:"zsk"`
@@ -209,9 +209,9 @@ type DNSSECKeyV11 struct {
 	DSRecord           *DNSSECKeyDSRecordV11 `json:"dsRecord,omitempty"`
 }
 
-// DNSSECKeyDSRecordRiak is a DNSSEC key DS record, as stored in Riak.
+// DNSSECKeyDSRecordSDB is a DNSSEC key DS record, as stored in the secure db.
 // This is specifically the key data, without the DS record text (which can be computed), and is also the format used in API 1.1 through 1.3.
-type DNSSECKeyDSRecordRiak DNSSECKeyDSRecordV11
+type DNSSECKeyDSRecordSDB DNSSECKeyDSRecordV11
 
 type DNSSECKeyDSRecord struct {
 	DNSSECKeyDSRecordV11

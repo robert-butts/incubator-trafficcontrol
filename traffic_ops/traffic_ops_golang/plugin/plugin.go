@@ -15,9 +15,10 @@ package plugin
 */
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path"
 	"runtime"
@@ -27,6 +28,8 @@ import (
 
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/securedb"
 )
 
 // List returns the list of plugins compiled into the calling executable.
@@ -38,12 +41,19 @@ func List() []string {
 	return l
 }
 
-func Get(appCfg config.Config) Plugins {
+func Get(appCfg *config.Config, db *sql.DB) (iplugin.Plugins, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, errors.New("starting transaction: " + err.Error())
+	}
+	defer tx.Commit()
+
 	log.Infof("plugin.Get given: %+v\n", appCfg.Plugins)
 	pluginSlice := getEnabled(appCfg.Plugins)
 	pluginCfg := loadConfig(pluginSlice, appCfg.PluginConfig)
+	secureDB := loadSecureDB(pluginSlice, pluginCfg, appCfg, tx)
 	ctx := map[string]*interface{}{}
-	return plugins{slice: pluginSlice, cfg: pluginCfg, ctx: ctx}
+	return plugins{slice: pluginSlice, cfg: pluginCfg, ctx: ctx, sDB: secureDB}, nil
 }
 
 func getEnabled(enabled []string) pluginsSlice {
@@ -86,9 +96,25 @@ func loadFuncs(ps pluginsSlice) map[string]LoadFunc {
 	return lf
 }
 
-type Plugins interface {
-	OnStartup(d StartupData)
-	OnRequest(d OnRequestData) bool
+func loadSecureDB(ps pluginsSlice, cfg map[string]interface{}, appCfg *config.Config, tx *sql.Tx) securedb.SecureDB {
+	for _, plugin := range ps {
+		if plugin.funcs.loadSecureDB == nil {
+			continue
+		}
+
+		dat := iplugin.LoadSecureDBData{Cfg: cfg[plugin.name], AppCfg: appCfg, Tx: tx}
+		db, err := plugin.funcs.loadSecureDB(dat)
+		if err != nil {
+			log.Errorln("failed to load secure db plugin '" + plugin.name + "': " + err.Error())
+			continue
+		}
+		if _, err := db.Ping(tx); err != nil {
+			log.Errorln("failed to load secure db plugin '" + plugin.name + "': ping: " + err.Error())
+			continue
+		}
+		return db
+	}
+	return nil
 }
 
 func AddPlugin(priority uint64, funcs Funcs) {
@@ -104,28 +130,11 @@ func AddPlugin(priority uint64, funcs Funcs) {
 }
 
 type Funcs struct {
-	load      LoadFunc
-	onStartup StartupFunc
-	onRequest OnRequestFunc
-}
-
-// Data is the common plugin data, given to most plugin hooks. This is designed to be embedded in the data structs for specific hooks.
-type Data struct {
-	Cfg       interface{}
-	Ctx       *interface{}
-	SharedCfg map[string]interface{}
-	RequestID uint64
-	AppCfg    config.Config
-}
-
-type StartupData struct {
-	Data
-}
-
-type OnRequestData struct {
-	Data
-	W http.ResponseWriter
-	R *http.Request
+	load LoadFunc
+	// loadSecureDB is called once on startup, like load. If multiple plugins have loadSecureDB hooks, they are called in priority order, and the first with a successful Ping is used. If all fail, the first priority is used, and an error is logged.
+	loadSecureDB LoadSecureDBFunc
+	onStartup    StartupFunc
+	onRequest    OnRequestFunc
 }
 
 type IsRequestHandled bool
@@ -136,8 +145,9 @@ const (
 )
 
 type LoadFunc func(json.RawMessage) interface{}
-type StartupFunc func(d StartupData)
-type OnRequestFunc func(d OnRequestData) IsRequestHandled
+type StartupFunc func(iplugin.StartupData)
+type OnRequestFunc func(iplugin.OnRequestData) IsRequestHandled
+type LoadSecureDBFunc func(iplugin.LoadSecureDBData) (securedb.SecureDB, error)
 
 type pluginObj struct {
 	funcs    Funcs
@@ -149,6 +159,7 @@ type plugins struct {
 	slice pluginsSlice
 	cfg   map[string]interface{}
 	ctx   map[string]*interface{}
+	sDB   securedb.SecureDB
 }
 
 type pluginsSlice []pluginObj
@@ -160,7 +171,7 @@ func (p pluginsSlice) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
 // initPlugins is where plugins are registered via their init functions.
 var initPlugins = pluginsSlice{}
 
-func (ps plugins) OnStartup(d StartupData) {
+func (ps plugins) OnStartup(d iplugin.StartupData) {
 	for _, p := range ps.slice {
 		ictx := interface{}(nil)
 		ps.ctx[p.name] = &ictx
@@ -174,7 +185,7 @@ func (ps plugins) OnStartup(d StartupData) {
 }
 
 // OnRequest returns a boolean whether to immediately stop processing the request. If a plugin returns true, this is immediately returned with no further plugins processed.
-func (ps plugins) OnRequest(d OnRequestData) bool {
+func (ps plugins) OnRequest(d iplugin.OnRequestData) bool {
 	log.Debugf("DEBUG plugins.OnRequest calling %+v plugins\n", len(ps.slice))
 	for _, p := range ps.slice {
 		if p.funcs.onRequest == nil {
@@ -190,3 +201,6 @@ func (ps plugins) OnRequest(d OnRequestData) bool {
 	}
 	return false
 }
+
+// SecureDB returns a securedb.SecureDB which is a demultiplexed version of all securedb plugins. If no plugins were loaded successfully, this returns nil.
+func (ps plugins) SecureDB() securedb.SecureDB { return ps.sDB }

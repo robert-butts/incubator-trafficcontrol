@@ -29,34 +29,39 @@ import (
 	"time"
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 
 	"github.com/miekg/dns"
 )
 
-func PutDNSSecKeys(tx *sql.Tx, cfg *config.Config, xmlID string, cdnName string, exampleURLs []string) error {
-	keys, ok, err := riaksvc.GetDNSSECKeys(cdnName, tx, cfg.RiakAuthOptions, cfg.RiakPort)
-	if err != nil {
-		return errors.New("getting DNSSec keys from Riak: " + err.Error())
-	} else if !ok {
-		return errors.New("getting DNSSec keys from Riak: no DNSSec keys found")
+func PutDNSSecKeys(inf *api.APIInfo, ds tc.DeliveryServiceName, cdn tc.CDNName, exampleURLs []string) error {
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		return errors.New("no secure database configured!")
 	}
-	cdnKeys, ok := keys[cdnName]
+
+	keys, ok, err := sdb.GetDNSSECKeys(inf.Tx.Tx, cdn)
+	if err != nil {
+		return errors.New("getting DNSSec keys from secure db: " + err.Error())
+	} else if !ok {
+		return errors.New("getting DNSSec keys from secure db: no DNSSec keys found")
+	}
+	cdnKeys, ok := keys[string(cdn)]
 	// TODO warn and continue?
 	if !ok {
-		return errors.New("getting DNSSec keys from Riak: no DNSSec keys for CDN")
+		return errors.New("getting DNSSec keys from secure db: no DNSSec keys for CDN")
 	}
 	kExp := getKeyExpiration(cdnKeys.KSK, dnssecDefaultKSKExpiration)
 	zExp := getKeyExpiration(cdnKeys.ZSK, dnssecDefaultZSKExpiration)
 	overrideTTL := false
-	dsKeys, err := CreateDNSSECKeys(tx, cfg, xmlID, exampleURLs, cdnKeys, kExp, zExp, dnssecDefaultTTL, overrideTTL)
+	dsKeys, err := CreateDNSSECKeys(inf.Tx.Tx, inf.Config, string(ds), exampleURLs, cdnKeys, kExp, zExp, dnssecDefaultTTL, overrideTTL)
 	if err != nil {
-		return errors.New("creating DNSSEC keys for delivery service '" + xmlID + "': " + err.Error())
+		return errors.New("creating DNSSEC keys for delivery service '" + string(ds) + "': " + err.Error())
 	}
-	keys[xmlID] = dsKeys
-	if err := riaksvc.PutDNSSECKeys(keys, cdnName, tx, cfg.RiakAuthOptions, cfg.RiakPort); err != nil {
-		return errors.New("putting Riak DNSSEC keys: " + err.Error())
+	keys[string(ds)] = dsKeys
+	if err := sdb.PutDNSSECKeys(inf.Tx.Tx, keys, cdn); err != nil {
+		return errors.New("putting secure db DNSSEC keys: " + err.Error())
 	}
 	return nil
 }
@@ -64,10 +69,10 @@ func PutDNSSecKeys(tx *sql.Tx, cfg *config.Config, xmlID string, cdnName string,
 // CreateDNSSECKeys creates DNSSEC keys for the given delivery service, updating existing keys if they exist. The overrideTTL parameter determines whether to reuse existing key TTLs if they exist, or to override existing TTLs with the ttl parameter's value.
 func CreateDNSSECKeys(tx *sql.Tx, cfg *config.Config, xmlID string, exampleURLs []string, cdnKeys tc.DNSSECKeySetV11, kskExpiration time.Duration, zskExpiration time.Duration, ttl time.Duration, overrideTTL bool) (tc.DNSSECKeySetV11, error) {
 	if len(cdnKeys.ZSK) == 0 {
-		return tc.DNSSECKeySetV11{}, errors.New("getting DNSSec keys from Riak: no DNSSec ZSK keys for CDN")
+		return tc.DNSSECKeySetV11{}, errors.New("getting DNSSec keys from secure db: no DNSSec ZSK keys for CDN")
 	}
 	if len(cdnKeys.KSK) == 0 {
-		return tc.DNSSECKeySetV11{}, errors.New("getting DNSSec keys from Riak: no DNSSec ZSK keys for CDN")
+		return tc.DNSSECKeySetV11{}, errors.New("getting DNSSec keys from secure db: no DNSSec ZSK keys for CDN")
 	}
 	if !overrideTTL {
 		ttl = getKeyTTL(cdnKeys.KSK, ttl)
@@ -205,18 +210,18 @@ func getKeyTTL(keys []tc.DNSSECKeyV11, defaultTTL time.Duration) time.Duration {
 	return defaultTTL
 }
 
-// MakeDNSSECKeySetFromRiakKeySet creates a DNSSECKeySet (as served by Traffic Ops) from a DNSSECKeysRiak (as stored in Riak), adding any computed data.
+// MakeDNSSECKeySetFromSDBKeySet creates a DNSSECKeySet (as served by Traffic Ops) from a DNSSECKeysSDB (as stored in the secure db), adding any computed data.
 // Notably, this adds the full DS Record text to CDN KSKs
-func MakeDNSSECKeysFromRiakKeys(riakKeys tc.DNSSECKeysRiak, dsTTL time.Duration) (tc.DNSSECKeys, error) {
+func MakeDNSSECKeysFromSDBKeys(sdbKeys tc.DNSSECKeysSDB, dsTTL time.Duration) (tc.DNSSECKeys, error) {
 	keys := map[string]tc.DNSSECKeySet{}
-	for name, riakKeySet := range riakKeys {
+	for name, sdbKeySet := range sdbKeys {
 		newKeySet := tc.DNSSECKeySet{}
-		for _, zsk := range riakKeySet.ZSK {
+		for _, zsk := range sdbKeySet.ZSK {
 			newZSK := tc.DNSSECKey{DNSSECKeyV11: zsk}
 			// ZSKs don't have DSRecords, so we don't need to check here
 			newKeySet.ZSK = append(newKeySet.ZSK, newZSK)
 		}
-		for _, ksk := range riakKeySet.KSK {
+		for _, ksk := range sdbKeySet.KSK {
 			newKSK := tc.DNSSECKey{DNSSECKeyV11: ksk}
 			if ksk.DSRecord != nil {
 				newKSK.DSRecord = &tc.DNSSECKeyDSRecord{DNSSECKeyDSRecordV11: *ksk.DSRecord}
@@ -261,7 +266,7 @@ func MakeDSRecordText(ksk tc.DNSSECKeyV11, ttl time.Duration) (string, error) {
 		return "", errors.New("malformed ksk public key: protocol '" + protocolStr + "' not a number")
 	}
 
-	realPublicKey := fields[7] // the Riak ksk.Public key is actually the RFC1035 single-line zone file format. For which the 7th field from 0 is the actual public key.
+	realPublicKey := fields[7] // the sdb ksk.Public key is actually the RFC1035 single-line zone file format. For which the 7th field from 0 is the actual public key.
 
 	dnsKey := dns.DNSKEY{
 		Hdr: dns.RR_Header{

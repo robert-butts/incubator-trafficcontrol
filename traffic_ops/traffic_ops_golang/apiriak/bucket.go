@@ -25,7 +25,6 @@ import (
 	"net/http"
 
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 )
 
 func GetBucketKey(w http.ResponseWriter, r *http.Request) {
@@ -36,12 +35,13 @@ func GetBucketKey(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	if inf.Config.RiakEnabled == false {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("riak.GetBucketKey: Riak is not configured!"))
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("riak.GetBucketKey: no secure database configured!"))
 		return
 	}
 
-	val, ok, err := riaksvc.GetBucketKey(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, inf.Params["bucket"], inf.Params["key"])
+	val, ok, err := sdb.GetBucketKey(inf.Tx.Tx, inf.Params["bucket"], inf.Params["key"])
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting bucket key from Riak: "+err.Error()))
 		return

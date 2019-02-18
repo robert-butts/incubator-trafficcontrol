@@ -20,15 +20,11 @@ package cdn
  */
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
-
-	"github.com/basho/riak-go-client"
 )
 
 func GetSSLKeys(w http.ResponseWriter, r *http.Request) {
@@ -38,18 +34,18 @@ func GetSSLKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer inf.Close()
-	keys, err := getSSLKeys(inf.Tx.Tx, inf.Config.RiakAuthOptions, inf.Config.RiakPort, inf.Params["name"])
+
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, userErr, errors.New("getting cdn ssl keys: no secure database configured!"))
+		return
+	}
+
+	cdn := tc.CDNName(inf.Params["name"])
+	keys, err := sdb.GetCDNSSLKeysObj(inf.Tx.Tx, cdn)
 	if err != nil {
-		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting cdn ssl keys: "+err.Error()))
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting cdn ssl keys from secure db: "+err.Error()))
 		return
 	}
 	api.WriteResp(w, r, keys)
-}
-
-func getSSLKeys(tx *sql.Tx, authOpts *riak.AuthOptions, riakPort *uint, cdnName string) ([]tc.CDNSSLKey, error) {
-	keys, err := riaksvc.GetCDNSSLKeysObj(tx, authOpts, riakPort, cdnName)
-	if err != nil {
-		return nil, errors.New("getting cdn ssl keys from Riak: " + err.Error())
-	}
-	return keys, nil
 }

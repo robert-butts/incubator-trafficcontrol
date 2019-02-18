@@ -37,6 +37,7 @@ import (
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/about"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/auth"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/iplugin"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/plugin"
 
 	"github.com/jmoiron/sqlx"
@@ -56,7 +57,7 @@ func main() {
 	showPlugins := flag.Bool("plugins", false, "Show the list of plugins and exit")
 	configFileName := flag.String("cfg", "", "The config file path")
 	dbConfigFileName := flag.String("dbcfg", "", "The db config file path")
-	riakConfigFileName := flag.String("riakcfg", "", "The riak config file path")
+	riakConfigFileName := flag.String("riakcfg", "", "The riak config file path. Deprecated, use the securedb_riak plugin instead.")
 	flag.Parse()
 
 	if *showVersion {
@@ -85,7 +86,7 @@ func main() {
 		for _, err := range errsToLog {
 			fmt.Println(err)
 		}
-		return
+		os.Exit(1)
 	}
 	for _, err := range errsToLog {
 		log.Warnln(err)
@@ -96,7 +97,7 @@ func main() {
 	err := auth.LoadPasswordBlacklist("app/conf/invalid_passwords.txt")
 	if err != nil {
 		log.Errorf("loading password blacklist: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	sslStr := "require"
@@ -107,7 +108,7 @@ func main() {
 	db, err := sqlx.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=%s&fallback_application_name=trafficops", cfg.DB.User, cfg.DB.Password, cfg.DB.Hostname, cfg.DB.DBName, sslStr))
 	if err != nil {
 		log.Errorf("opening database: %v\n", err)
-		return
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -116,7 +117,12 @@ func main() {
 	db.SetConnMaxLifetime(time.Duration(cfg.DBConnMaxLifetimeSeconds) * time.Second)
 
 	// TODO combine
-	plugins := plugin.Get(cfg)
+	plugins, err := plugin.Get(&cfg, db.DB)
+	if err != nil {
+		log.Errorln("getting plugins: " + err.Error())
+		os.Exit(1)
+	}
+
 	profiling := cfg.ProfilingEnabled
 
 	pprofMux := http.DefaultServeMux
@@ -134,10 +140,10 @@ func main() {
 
 	if err := RegisterRoutes(ServerData{DB: db, Config: cfg, Profiling: &profiling, Plugins: plugins}); err != nil {
 		log.Errorf("registering routes: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
-	plugins.OnStartup(plugin.StartupData{Data: plugin.Data{SharedCfg: cfg.PluginSharedConfig, AppCfg: cfg}})
+	plugins.OnStartup(iplugin.StartupData{Data: iplugin.Data{SharedCfg: cfg.PluginSharedConfig, AppCfg: cfg}})
 
 	log.Infof("Listening on " + cfg.Port)
 

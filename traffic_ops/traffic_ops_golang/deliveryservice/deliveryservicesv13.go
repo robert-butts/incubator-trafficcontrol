@@ -33,9 +33,7 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-util"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/auth"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/dbhelpers"
-	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/riaksvc"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
 
 	"github.com/jmoiron/sqlx"
@@ -125,7 +123,7 @@ func CreateV13(w http.ResponseWriter, r *http.Request) {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusForbidden, errors.New("not authorized on this tenant"), nil)
 		return
 	}
-	ds, errCode, userErr, sysErr = create(inf.Tx.Tx, *inf.Config, inf.User, ds)
+	ds, errCode, userErr, sysErr = create(inf, ds)
 	if userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
@@ -134,7 +132,9 @@ func CreateV13(w http.ResponseWriter, r *http.Request) {
 }
 
 // create creates the given ds in the database, and returns the DS with its id and other fields created on insert set. On error, the HTTP status code, user error, and system error are returned. The status code SHOULD NOT be used, if both errors are nil.
-func create(tx *sql.Tx, cfg config.Config, user *auth.CurrentUser, ds tc.DeliveryServiceNullable) (tc.DeliveryServiceNullable, int, error, error) {
+func create(inf *api.APIInfo, ds tc.DeliveryServiceNullable) (tc.DeliveryServiceNullable, int, error, error) {
+	tx := inf.Tx.Tx
+	user := inf.User
 	// TODO change DeepCachingType to implement sql.Valuer and sql.Scanner, so sqlx struct scan can be used.
 	deepCachingType := tc.DeepCachingType("").String()
 	if ds.DeepCachingType != nil {
@@ -202,7 +202,7 @@ func create(tx *sql.Tx, cfg config.Config, user *auth.CurrentUser, ds tc.Deliver
 	}
 
 	if dnssecEnabled {
-		if err := PutDNSSecKeys(tx, &cfg, *ds.XMLID, cdnName, ds.ExampleURLs); err != nil {
+		if err := PutDNSSecKeys(inf, tc.DeliveryServiceName(*ds.XMLID), tc.CDNName(cdnName), ds.ExampleURLs); err != nil {
 			return tc.DeliveryServiceNullable{}, http.StatusInternalServerError, nil, errors.New("creating DNSSEC keys: " + err.Error())
 		}
 	}
@@ -388,7 +388,7 @@ func UpdateV13(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ds, errCode, userErr, sysErr = update(inf.Tx.Tx, *inf.Config, inf.User, &ds)
+	ds, errCode, userErr, sysErr = update(inf, &ds)
 	if userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
@@ -407,7 +407,10 @@ func getDSType(tx *sql.Tx, xmlid string) (tc.DSType, bool, error) {
 	return tc.DSTypeFromString(name), true, nil
 }
 
-func update(tx *sql.Tx, cfg config.Config, user *auth.CurrentUser, ds *tc.DeliveryServiceNullable) (tc.DeliveryServiceNullable, int, error, error) {
+func update(inf *api.APIInfo, ds *tc.DeliveryServiceNullable) (tc.DeliveryServiceNullable, int, error, error) {
+	user := inf.User
+	tx := inf.Tx.Tx
+
 	if ds.XMLID == nil {
 		return tc.DeliveryServiceNullable{}, http.StatusBadRequest, errors.New("missing xml_id"), nil
 	}
@@ -503,7 +506,7 @@ func update(tx *sql.Tx, cfg config.Config, user *auth.CurrentUser, ds *tc.Delive
 	}
 
 	if newDSType.HasSSLKeys() && oldHostName != newHostName {
-		if err := updateSSLKeys(ds, newHostName, tx, cfg); err != nil {
+		if err := updateSSLKeys(inf, ds, newHostName); err != nil {
 			return tc.DeliveryServiceNullable{}, http.StatusInternalServerError, nil, errors.New("updating delivery service " + *ds.XMLID + ": updating SSL keys: " + err.Error())
 		}
 	}
@@ -631,11 +634,15 @@ func GetDeliveryServices(query string, queryValues map[string]interface{}, tx *s
 	return dses, nil, tc.NoError
 }
 
-func updateSSLKeys(ds *tc.DeliveryServiceNullable, hostName string, tx *sql.Tx, cfg config.Config) error {
+func updateSSLKeys(inf *api.APIInfo, ds *tc.DeliveryServiceNullable, hostName string) error {
+	sdb := inf.Plugins.SecureDB()
+	if sdb == nil {
+		return errors.New("no secure database configured!")
+	}
 	if ds.XMLID == nil {
 		return errors.New("delivery services has no XMLID!")
 	}
-	key, ok, err := riaksvc.GetDeliveryServiceSSLKeysObj(*ds.XMLID, riaksvc.DSSSLKeyVersionLatest, tx, cfg.RiakAuthOptions, cfg.RiakPort)
+	key, ok, err := sdb.GetDeliveryServiceSSLKeysObjLatest(inf.Tx.Tx, tc.DeliveryServiceName(*ds.XMLID))
 	if err != nil {
 		return errors.New("getting SSL key: " + err.Error())
 	}
@@ -644,7 +651,7 @@ func updateSSLKeys(ds *tc.DeliveryServiceNullable, hostName string, tx *sql.Tx, 
 	}
 	key.DeliveryService = *ds.XMLID
 	key.Hostname = hostName
-	if err := riaksvc.PutDeliveryServiceSSLKeysObj(key, tx, cfg.RiakAuthOptions, cfg.RiakPort); err != nil {
+	if err := sdb.PutDeliveryServiceSSLKeysObj(inf.Tx.Tx, key); err != nil {
 		return errors.New("putting updated SSL key: " + err.Error())
 	}
 	return nil
