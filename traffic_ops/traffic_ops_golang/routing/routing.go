@@ -203,6 +203,7 @@ func Handler(
 	ctx = context.WithValue(ctx, api.DBContextKey, db)
 	ctx = context.WithValue(ctx, api.ConfigContextKey, cfg)
 	ctx = context.WithValue(ctx, api.ReqIDContextKey, reqID)
+	ctx = context.WithValue(ctx, api.APIVersionContextKey, GetAPIVersion(r))
 
 	// plugins have no pre-parsed path params, but add an empty map so they can use the api helper funcs that require it.
 	pluginCtx := context.WithValue(ctx, api.PathParamsKey, map[string]string{})
@@ -298,4 +299,23 @@ func nextReqIDGetter() func() uint64 {
 	return func() uint64 {
 		return atomic.AddUint64(&id, 1)
 	}
+}
+
+func GetAPIVersion(req *http.Request) float64 {
+	pathParts := strings.Split(req.URL.Path, "/")
+	if len(pathParts) < 2 {
+		return 0 // path doesn't start with `/api`, so it's not an api request
+	}
+	if strings.ToLower(pathParts[1]) != "api" {
+		return 0 // path doesn't start with `/api`, so it's not an api request
+	}
+	if len(pathParts) < 3 {
+		return 0 // path starts with `/api` but not `/api/{version}`, so it's an api request, and an unknown/nonexistent version.
+	}
+
+	version, err := strconv.ParseFloat(pathParts[2], 64)
+	if err != nil {
+		return 0 // path starts with `/api`, and version isn't a number, so it's an unknown/nonexistent version
+	}
+	return version
 }

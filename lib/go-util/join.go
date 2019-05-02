@@ -73,3 +73,12 @@ func JoinErrsSep(errs []error, separator string) error {
 func CamelToSnakeCase(s string) string {
 	return strings.ToLower(regexp.MustCompile("([a-z0-9])([A-Z])").ReplaceAllString(s, "${1}_${2}"))
 }
+
+// MapStr takes a slice of strings, applies f to each member, and returns the result.
+func MapStr(strs []string, f func(s string) string) []string {
+	newStrs := make([]string, 0, len(strs))
+	for _, str := range strs {
+		newStrs = append(newStrs, f(str))
+	}
+	return newStrs
+}

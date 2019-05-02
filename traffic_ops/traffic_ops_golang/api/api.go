@@ -47,6 +47,7 @@ const DBContextKey = "db"
 const ConfigContextKey = "context"
 const ReqIDContextKey = "reqid"
 const APIRespWrittenKey = "respwritten"
+const APIVersionContextKey = "apiversion"
 
 // WriteResp takes any object, serializes it as JSON, and writes that to w. Any errors are logged and written to w via tc.GetHandleErrorsFunc.
 // This is a helper for the common case; not using this in unusual cases is perfectly acceptable.
@@ -282,12 +283,13 @@ func Parse(r io.Reader, tx *sql.Tx, v ParseValidator) error {
 }
 
 type APIInfo struct {
-	Params    map[string]string
-	IntParams map[string]int
-	User      *auth.CurrentUser
-	ReqID     uint64
-	Tx        *sqlx.Tx
-	Config    *config.Config
+	Params     map[string]string
+	IntParams  map[string]int
+	User       *auth.CurrentUser
+	ReqID      uint64
+	Tx         *sqlx.Tx
+	Config     *config.Config
+	APIVersion float64
 }
 
 // NewInfo get and returns the context info needed by handlers. It also returns any user error, any system error, and the status code which should be returned to the client if an error occurred.
@@ -332,6 +334,10 @@ func NewInfo(r *http.Request, requiredParams []string, intParamNames []string) (
 	if err != nil {
 		return &APIInfo{Tx: &sqlx.Tx{}}, errors.New("getting reqID: " + err.Error()), nil, http.StatusInternalServerError
 	}
+	apiVersion, err := GetAPIVersion(r.Context())
+	if err != nil {
+		return &APIInfo{Tx: &sqlx.Tx{}}, errors.New("getting api version: " + err.Error()), nil, http.StatusInternalServerError
+	}
 
 	user, err := auth.GetCurrentUser(r.Context())
 	if err != nil {
@@ -347,12 +353,13 @@ func NewInfo(r *http.Request, requiredParams []string, intParamNames []string) (
 		return &APIInfo{Tx: &sqlx.Tx{}}, userErr, errors.New("could not begin transaction: " + err.Error()), http.StatusInternalServerError
 	}
 	return &APIInfo{
-		Config:    cfg,
-		ReqID:     reqID,
-		Params:    params,
-		IntParams: intParams,
-		User:      user,
-		Tx:        tx,
+		Config:     cfg,
+		ReqID:      reqID,
+		Params:     params,
+		IntParams:  intParams,
+		User:       user,
+		APIVersion: apiVersion,
+		Tx:         tx,
 	}, nil, nil, http.StatusOK
 }
 
@@ -416,6 +423,19 @@ func getReqID(ctx context.Context) (uint64, error) {
 		}
 	}
 	return 0, errors.New("No ReqID found in Context")
+}
+
+func GetAPIVersion(ctx context.Context) (float64, error) {
+	val := ctx.Value(APIVersionContextKey)
+	if val != nil {
+		switch v := val.(type) {
+		case float64:
+			return v, nil
+		default:
+			return 0, fmt.Errorf("api version found with bad type: %T", v)
+		}
+	}
+	return 0, errors.New("No api version found in Context")
 }
 
 // setRespWritten sets the APIRespWrittenKey key in the Context of the given Request.
@@ -548,7 +568,7 @@ func ParseDBError(ierr error) (error, error, int) {
 
 	err, ok := ierr.(*pq.Error)
 	if !ok {
-		return nil, errors.New("database returned non pq error: " + err.Error()), http.StatusInternalServerError
+		return nil, errors.New("database returned non pq error: " + ierr.Error()), http.StatusInternalServerError
 	}
 
 	if usrErr, sysErr, errCode := parseNotNullConstraint(err); errCode != http.StatusOK {

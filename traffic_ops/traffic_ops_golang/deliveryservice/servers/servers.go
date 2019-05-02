@@ -528,7 +528,7 @@ func (dss *TODSSDeliveryService) Read() ([]interface{}, error, error, int) {
 	}
 	where, queryValues = dbhelpers.AddTenancyCheck(where, queryValues, "ds.tenant_id", tenantIDs)
 
-	query := deliveryservice.GetDSSelectQuery() + where + orderBy
+	query := deliveryservice.SelectQuery(tc.NewDeliveryServiceNullable(dss.APIInfo().APIVersion)) + where + orderBy
 	queryValues["server"] = dss.APIInfo().Params["id"]
 	log.Debugln("generated deliveryServices query: " + query)
 	log.Debugf("executing with values: %++v\n", queryValues)

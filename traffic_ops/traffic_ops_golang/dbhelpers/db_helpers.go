@@ -23,11 +23,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/lib/go-tc"
 
+	"github.com/jmoiron/sqlx/reflectx"
 	"github.com/lib/pq"
 )
 
@@ -266,4 +268,26 @@ func GetCDNs(tx *sql.Tx) (map[tc.CDNName]struct{}, error) {
 		cdns[cdn] = struct{}{}
 	}
 	return cdns, nil
+}
+
+func GetDBFields(obj interface{}) []string {
+	fields := []string{}
+	for field, _ := range reflectx.NewMapperFunc("db", func(string) string { return "" }).FieldMap(reflect.ValueOf(obj)) {
+		if field != "" {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
+// RemoveDBFields is a helper func for removing join table and other fields (e.g. id, last_updated) from all the fields on a struct.
+func RemoveDBFields(allFields []string, joinFields map[string]string) []string {
+	fields := []string{}
+	for _, field := range allFields {
+		if _, ok := joinFields[field]; ok || field == "" {
+			continue
+		}
+		fields = append(fields, field)
+	}
+	return fields
 }

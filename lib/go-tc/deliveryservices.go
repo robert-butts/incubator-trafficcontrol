@@ -157,7 +157,7 @@ type DeliveryServiceNullableV13 struct {
 	DeepCachingType   *DeepCachingType `json:"deepCachingType" db:"deep_caching_type"`
 	FQPacingRate      *int             `json:"fqPacingRate"`
 	SigningAlgorithm  *string          `json:"signingAlgorithm" db:"signing_algorithm"`
-	Tenant            *string          `json:"tenant"`
+	Tenant            *string          `json:"tenant" db:"tenant_name"`
 	TRResponseHeaders *string          `json:"trResponseHeaders"`
 	TRRequestHeaders  *string          `json:"trRequestHeaders"`
 }
@@ -176,7 +176,7 @@ type DeliveryServiceNullableV11 struct {
 	CacheURL                 *string                 `json:"cacheurl" db:"cacheurl"`
 	CCRDNSTTL                *int                    `json:"ccrDnsTtl" db:"ccr_dns_ttl"`
 	CDNID                    *int                    `json:"cdnId" db:"cdn_id"`
-	CDNName                  *string                 `json:"cdnName"`
+	CDNName                  *string                 `json:"cdnName" db:"cdn_name"`
 	CheckPath                *string                 `json:"checkPath" db:"check_path"`
 	DisplayName              *string                 `json:"displayName" db:"display_name"`
 	DNSBypassCNAME           *string                 `json:"dnsBypassCname" db:"dns_bypass_cname"`
@@ -210,9 +210,9 @@ type DeliveryServiceNullableV11 struct {
 	MultiSiteOrigin          *bool                   `json:"multiSiteOrigin" db:"multi_site_origin"`
 	OriginShield             *string                 `json:"originShield" db:"origin_shield"`
 	OrgServerFQDN            *string                 `json:"orgServerFqdn" db:"org_server_fqdn"`
-	ProfileDesc              *string                 `json:"profileDescription"`
+	ProfileDesc              *string                 `json:"profileDescription" db:"profile_description"`
 	ProfileID                *int                    `json:"profileId" db:"profile"`
-	ProfileName              *string                 `json:"profileName"`
+	ProfileName              *string                 `json:"profileName" db:"profile_name"`
 	Protocol                 *int                    `json:"protocol" db:"protocol"`
 	QStringIgnore            *int                    `json:"qstringIgnore" db:"qstring_ignore"`
 	RangeRequestHandling     *int                    `json:"rangeRequestHandling" db:"range_request_handling"`
@@ -223,28 +223,95 @@ type DeliveryServiceNullableV11 struct {
 	Signed                   bool                    `json:"signed"`
 	SSLKeyVersion            *int                    `json:"sslKeyVersion" db:"ssl_key_version"`
 	TenantID                 *int                    `json:"tenantId" db:"tenant_id"`
-	Type                     *DSType                 `json:"type"`
+	Type                     *DSType                 `json:"type" db:"type_name"`
 	TypeID                   *int                    `json:"typeId" db:"type"`
 	XMLID                    *string                 `json:"xmlId" db:"xml_id"`
 	ExampleURLs              []string                `json:"exampleURLs"`
 }
 
-// NewDeliveryServiceNullableFromV12 creates a new V13 DS from a V12 DS, filling new fields with appropriate defaults.
-func NewDeliveryServiceNullableFromV12(ds DeliveryServiceNullableV12) DeliveryServiceNullable {
-	newDSv13 := DeliveryServiceNullableV13{DeliveryServiceNullableV12: ds}
-	newDS := DeliveryServiceNullable{DeliveryServiceNullableV13: newDSv13}
-	newDS.Sanitize()
-	return newDS
+type IDeliveryServiceNullable interface {
+	Sanitize()
+	Validate(tx *sql.Tx) error
+	ToLatest() *DeliveryServiceNullable
+	DBer
 }
 
-// NewDeliveryServiceNullableFromV13 creates a new V14 DS from a V13 DS, filling new fields with appropriate defaults.
-func NewDeliveryServiceNullableFromV13(ds DeliveryServiceNullableV13) DeliveryServiceNullable {
-	newDS := DeliveryServiceNullable{DeliveryServiceNullableV13: ds}
-	newDS.Sanitize()
-	return newDS
+type DBTabler interface {
+	DBTable() string
 }
 
-func (ds *DeliveryServiceNullableV12) Sanitize() {
+type IDer interface {
+	GetID() *int
+	SetID(*int)
+}
+
+type LastUpdateder interface {
+	GetLastUpdated() *TimeNoMod
+	SetLastUpdated(*TimeNoMod)
+}
+
+type DBer interface {
+	DBTabler
+	IDer
+	LastUpdateder
+}
+
+func (ds *DeliveryServiceNullableV11) DBTable() string             { return "deliveryservice" }
+func (ds *DeliveryServiceNullableV11) GetID() *int                 { return ds.ID }
+func (ds *DeliveryServiceNullableV11) SetID(id *int)               { ds.ID = id }
+func (ds *DeliveryServiceNullableV11) GetLastUpdated() *TimeNoMod  { return ds.LastUpdated }
+func (ds *DeliveryServiceNullableV11) SetLastUpdated(t *TimeNoMod) { ds.LastUpdated = t }
+
+func (ds *DeliveryServiceNullableV11) ToLatest() *DeliveryServiceNullable {
+	latest := &DeliveryServiceNullable{}
+	latest.DeliveryServiceNullableV11 = *ds
+	latest.Sanitize()
+	return latest
+}
+
+func (ds *DeliveryServiceNullableV12) ToLatest() *DeliveryServiceNullable {
+	latest := &DeliveryServiceNullable{}
+	latest.DeliveryServiceNullableV12 = *ds
+	latest.Sanitize()
+	return latest
+}
+
+func (ds *DeliveryServiceNullableV13) ToLatest() *DeliveryServiceNullable {
+	latest := &DeliveryServiceNullable{}
+	latest.DeliveryServiceNullableV13 = *ds
+	latest.Sanitize()
+	return latest
+}
+
+func (ds *DeliveryServiceNullable) ToLatest() *DeliveryServiceNullable {
+	dsCopy := *ds
+	return &dsCopy
+}
+
+func NewDeliveryServiceNullable(version float64) IDeliveryServiceNullable {
+	return (&DeliveryServiceNullable{}).ToVersion(version)
+}
+
+func (ds *DeliveryServiceNullable) ToVersion(version float64) IDeliveryServiceNullable {
+	switch version {
+	case 1.1:
+		dsVer := ds.DeliveryServiceNullableV11
+		return &dsVer
+	case 1.2:
+		dsVer := ds.DeliveryServiceNullableV12
+		return &dsVer
+	case 1.3:
+		dsVer := ds.DeliveryServiceNullableV13
+		return &dsVer
+	case 1.4:
+		dsVer := *ds
+		return &dsVer
+	default:
+		return nil
+	}
+}
+
+func (ds *DeliveryServiceNullableV11) Sanitize() {
 	if ds.GeoLimitCountries != nil {
 		*ds.GeoLimitCountries = strings.ToUpper(strings.Replace(*ds.GeoLimitCountries, " ", "", -1))
 	}
@@ -300,7 +367,7 @@ func requiredIfMatchesTypeName(patterns []string, typeName string) func(interfac
 	}
 }
 
-func (ds *DeliveryServiceNullableV12) validateTypeFields(tx *sql.Tx) error {
+func (ds *DeliveryServiceNullableV11) validateTypeFields(tx *sql.Tx) error {
 	// Validate the TypeName related fields below
 	err := error(nil)
 	DNSRegexType := "^DNS.*$"
@@ -376,7 +443,7 @@ func ParseOrgServerFQDN(orgServerFQDN string) (*string, *string, *string, error)
 	return &protocol, &FQDN, port, nil
 }
 
-func (ds *DeliveryServiceNullableV12) Validate(tx *sql.Tx) error {
+func (ds *DeliveryServiceNullableV11) Validate(tx *sql.Tx) error {
 	ds.Sanitize()
 	isDNSName := validation.NewStringRule(govalidator.IsDNSName, "must be a valid hostname")
 	noPeriods := validation.NewStringRule(tovalidate.NoPeriods, "cannot contain periods")
