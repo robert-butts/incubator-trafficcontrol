@@ -240,6 +240,10 @@ type DBTabler interface {
 	DBTable() string
 }
 
+type DBFielder interface {
+	DBFields() []string
+}
+
 type IDer interface {
 	GetID() *int
 	SetID(*int)
@@ -252,8 +256,81 @@ type LastUpdateder interface {
 
 type DBer interface {
 	DBTabler
+	DBFielder
 	IDer
 	LastUpdateder
+}
+
+func (ds *DeliveryServiceNullable) DBFields() []string {
+	return append(ds.DeliveryServiceNullableV13.DBFields(), []string{
+		"max_origin_connections",
+	}...)
+}
+
+func (ds *DeliveryServiceNullableV13) DBFields() []string {
+	return append(ds.DeliveryServiceNullableV12.DBFields(), []string{
+		"deep_caching_type",
+		"signing_algorithm",
+		"tenant_name",
+	}...)
+}
+
+func (ds *DeliveryServiceNullableV11) DBFields() []string {
+	return []string{
+		"active",
+		"anonymous_blocking_enabled",
+		"cacheurl",
+		"ccr_dns_ttl",
+		"cdn_id",
+		"cdn_name",
+		"check_path",
+		"display_name",
+		"dns_bypass_cname",
+		"dns_bypass_ip",
+		"dns_bypass_ip6",
+		"dns_bypass_ttl",
+		"dscp",
+		"edge_header_rewrite",
+		"fq_pacing_rate",
+		"geo_limit",
+		"geo_limit_countries",
+		"geolimit_redirect_url",
+		"geo_provider",
+		"global_max_mbps",
+		"global_max_tps",
+		"http_bypass_fqdn",
+		"id",
+		"info_url",
+		"initial_dispersion",
+		"ipv6_routing_enabled",
+		"last_updated",
+		"logs_enabled",
+		"long_desc",
+		"long_desc_1",
+		"long_desc_2",
+		"max_dns_answers",
+		"mid_header_rewrite",
+		"miss_lat",
+		"miss_long",
+		"multi_site_origin",
+		"origin_shield",
+		"org_server_fqdn",
+		"profile_description",
+		"profile",
+		"profile_name",
+		"protocol",
+		"qstring_ignore",
+		"range_request_handling",
+		"regex_remap",
+		"regional_geo_blocking",
+		"remap_text",
+		"routing_name",
+		"ssl_key_version",
+		"tenant_id",
+		"type_name",
+		"type",
+		"xml_id",
+	}
 }
 
 func (ds *DeliveryServiceNullableV11) DBTable() string             { return "deliveryservice" }

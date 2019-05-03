@@ -1133,7 +1133,7 @@ func DBTransformFields(tableAlias string) map[string]string {
 }
 
 func SelectQuery(ds tc.IDeliveryServiceNullable) string {
-	allFields := dbhelpers.GetDBFields(ds)
+	allFields := ds.DBFields()
 	tableAlias := `ds`
 	transformFields := DBTransformFields(tableAlias)
 	joinFields := DBJoinFields()
@@ -1164,7 +1164,7 @@ FROM
 }
 
 func InsertQuery(ds *tc.DeliveryServiceNullable) string {
-	fields := dbhelpers.RemoveDBFields(dbhelpers.GetDBFields(ds), DBOmitModifyFields())
+	fields := dbhelpers.RemoveDBFields(ds.DBFields(), DBOmitModifyFields())
 	return `
 INSERT INTO ` + ds.DBTable() + `
 (` + strings.Join(fields, ",") + `)
@@ -1174,7 +1174,7 @@ RETURNING id, last_updated
 }
 
 func UpdateQuery(ds tc.DBer) string {
-	fields := dbhelpers.RemoveDBFields(dbhelpers.GetDBFields(ds), DBOmitModifyFields())
+	fields := dbhelpers.RemoveDBFields(ds.DBFields(), DBOmitModifyFields())
 	return `
 UPDATE ` + ds.DBTable() + `
 SET ` + strings.Join(util.MapStr(fields, func(s string) string { return s + "=:" + s }), ",") + `
