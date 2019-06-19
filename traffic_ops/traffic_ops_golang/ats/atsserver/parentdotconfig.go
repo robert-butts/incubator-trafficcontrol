@@ -1,4 +1,4 @@
-package ats
+package atsserver
 
 /*
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -29,40 +29,38 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/apache/trafficcontrol/lib/go-atscfg"
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/lib/go-tc"
 	"github.com/apache/trafficcontrol/lib/go-util"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/ats"
 
 	"github.com/lib/pq"
 )
 
-const DefaultATSVersion = "5" // TODO Emulates Perl; change to 6? ATC no longer officially supports ATS 5.
-
-const InvalidID = -1
-
 func GetParentDotConfig(w http.ResponseWriter, r *http.Request) {
-	inf, userErr, sysErr, errCode := api.NewInfo(r, []string{"id-or-host"}, nil)
+	inf, userErr, sysErr, errCode := api.NewInfo(r, []string{"server-name-or-id"}, nil)
 	if userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
 	}
 	defer inf.Close()
 
-	idOrHost := strings.TrimSuffix(inf.Params["id-or-host"], ".json")
-	hostName := ""
+	idOrHost := strings.TrimSuffix(inf.Params["server-name-or-id"], ".json")
+	hostName := tc.CacheName("")
 	isHost := false
 	id, err := strconv.Atoi(idOrHost)
 	if err != nil {
 		isHost = true
-		hostName = idOrHost
+		hostName = tc.CacheName(idOrHost)
 	}
 
-	serverInfo, ok, err := &ServerInfo{}, false, error(nil)
+	serverInfo, ok, err := &atscfg.ServerInfo{}, false, error(nil)
 	if isHost {
-		serverInfo, ok, err = getServerInfoByHost(inf.Tx.Tx, hostName)
+		serverInfo, ok, err = ats.GetServerInfoByHost(inf.Tx.Tx, hostName)
 	} else {
-		serverInfo, ok, err = getServerInfoByID(inf.Tx.Tx, id)
+		serverInfo, ok, err = ats.GetServerInfoByID(inf.Tx.Tx, id)
 	}
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("Getting server info: "+err.Error()))
@@ -73,13 +71,13 @@ func GetParentDotConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	atsMajorVer, err := GetATSMajorVersion(inf.Tx.Tx, serverInfo.ProfileID)
+	atsMajorVer, err := ats.GetATSMajorVersion(inf.Tx.Tx, serverInfo.ProfileID)
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("Getting ATS major version: "+err.Error()))
 		return
 	}
 
-	hdr, err := HeaderComment(inf.Tx.Tx, serverInfo.HostName)
+	hdr, err := ats.HeaderComment(inf.Tx.Tx, serverInfo.HostName)
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("Getting header comment: "+err.Error()))
 		return
@@ -402,98 +400,6 @@ func (s ParentConfigDSSortByName) Less(i, j int) bool {
 }
 
 const AlgorithmConsistentHash = "consistent_hash"
-
-type ServerInfo struct {
-	CacheGroupID                  int
-	CDN                           tc.CDNName
-	CDNID                         int
-	DomainName                    string
-	HostName                      string
-	ID                            int
-	IP                            string
-	ParentCacheGroupID            int
-	ParentCacheGroupType          string
-	ProfileID                     ProfileID
-	ProfileName                   string
-	Port                          int
-	SecondaryParentCacheGroupID   int
-	SecondaryParentCacheGroupType string
-	Type                          string
-}
-
-func (s *ServerInfo) IsTopLevelCache() bool {
-	return (s.ParentCacheGroupType == tc.CacheGroupOriginTypeName || s.ParentCacheGroupID == InvalidID) &&
-		(s.SecondaryParentCacheGroupType == tc.CacheGroupOriginTypeName || s.SecondaryParentCacheGroupID == InvalidID)
-}
-
-// getServerInfo returns the necessary info about the server, whether the server exists, and any error.
-func getServerInfoByID(tx *sql.Tx, id int) (*ServerInfo, bool, error) {
-	return getServerInfo(tx, ServerInfoQuery()+`WHERE s.id = $1`, []interface{}{id})
-}
-
-// getServerInfo returns the necessary info about the server, whether the server exists, and any error.
-func getServerInfoByHost(tx *sql.Tx, host string) (*ServerInfo, bool, error) {
-	return getServerInfo(tx, ServerInfoQuery()+` WHERE s.host_name = $1 `, []interface{}{host})
-}
-
-// getServerInfo returns the necessary info about the server, whether the server exists, and any error.
-func getServerInfo(tx *sql.Tx, qry string, qryParams []interface{}) (*ServerInfo, bool, error) {
-	s := ServerInfo{}
-	if err := tx.QueryRow(qry, qryParams...).Scan(&s.CDN, &s.CDNID, &s.ID, &s.HostName, &s.DomainName, &s.IP, &s.ProfileID, &s.ProfileName, &s.Port, &s.Type, &s.CacheGroupID, &s.ParentCacheGroupID, &s.SecondaryParentCacheGroupID, &s.ParentCacheGroupType, &s.SecondaryParentCacheGroupType); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, false, nil
-		}
-		return nil, false, errors.New("querying server info: " + err.Error())
-	}
-	return &s, true, nil
-}
-
-func ServerInfoQuery() string {
-	return `
-SELECT
-  c.name as cdn,
-  s.cdn_id,
-  s.id,
-  s.host_name,
-  c.domain_name,
-  s.ip_address,
-  s.profile AS profile_id,
-  p.name AS profile_name,
-  s.tcp_port,
-  t.name as type,
-  s.cachegroup,
-  COALESCE(cg.parent_cachegroup_id, ` + strconv.Itoa(InvalidID) + `) as parent_cachegroup_id,
-  COALESCE(cg.secondary_parent_cachegroup_id, ` + strconv.Itoa(InvalidID) + `) as secondary_parent_cachegroup_id,
-  COALESCE(parentt.name, '') as parent_cachegroup_type,
-  COALESCE(sparentt.name, '') as secondary_parent_cachegroup_type
-FROM
-  server s
-  JOIN cdn c ON s.cdn_id = c.id
-  JOIN type t ON s.type = t.id
-  JOIN profile p ON p.id = s.profile
-  JOIN cachegroup cg on s.cachegroup = cg.id
-  LEFT JOIN type parentt on parentt.id = (select type from cachegroup where id = cg.parent_cachegroup_id)
-  LEFT JOIN type sparentt on sparentt.id = (select type from cachegroup where id = cg.secondary_parent_cachegroup_id)
-`
-}
-
-// GetATSMajorVersion returns the major version of the given profile's package trafficserver parameter.
-// If no parameter exists, this does not return an error, but rather logs a warning and uses DefaultATSVersion.
-func GetATSMajorVersion(tx *sql.Tx, serverProfileID ProfileID) (int, error) {
-	atsVersion, _, err := GetProfileParamValue(tx, int(serverProfileID), "package", "trafficserver")
-	if err != nil {
-		return 0, errors.New("getting profile param value: " + err.Error())
-	}
-	if len(atsVersion) == 0 {
-		atsVersion = DefaultATSVersion
-		log.Warnln("Parameter package.trafficserver missing for profile " + strconv.Itoa(int(serverProfileID)) + ". Assuming version " + atsVersion)
-	}
-	atsMajorVer, err := strconv.Atoi(atsVersion[:1])
-	if err != nil {
-		return 0, errors.New("ats version parameter '" + atsVersion + "' on this profile is not a number (config_file 'package', name 'trafficserver')")
-	}
-	return atsMajorVer, nil
-}
 
 type ParentConfigDS struct {
 	Name            tc.DeliveryServiceName
@@ -825,7 +731,7 @@ type ParentInfo struct {
 	SecondaryParent bool
 }
 
-func getParentInfo(tx *sql.Tx, server *ServerInfo) (map[string][]ParentInfo, error) {
+func getParentInfo(tx *sql.Tx, server *atscfg.ServerInfo) (map[string][]ParentInfo, error) {
 	parentInfos := map[string][]ParentInfo{}
 
 	serverDomain, ok, err := getCDNDomainByProfileID(tx, server.ProfileID)
@@ -900,17 +806,17 @@ type CGServer struct {
 	CacheGroupID int
 	Status       int
 	Type         int
-	ProfileID    ProfileID
+	ProfileID    atscfg.ProfileID
 	CDN          int
 	TypeName     string
 	Domain       string
 }
 
 // getServerParentCacheGroupProfiles gets the profile information for servers belonging to the parent cachegroup, and secondary parent cachegroup, of the cachegroup of each server.
-func getServerParentCacheGroupProfiles(tx *sql.Tx, server *ServerInfo) (map[ProfileID]ProfileCache, map[string][]CGServer, error) {
+func getServerParentCacheGroupProfiles(tx *sql.Tx, server *atscfg.ServerInfo) (map[atscfg.ProfileID]ProfileCache, map[string][]CGServer, error) {
 	// TODO make this more efficient - should be a single query - this was transliterated from Perl - it's extremely inefficient.
 
-	profileCaches := map[ProfileID]ProfileCache{}
+	profileCaches := map[atscfg.ProfileID]ProfileCache{}
 	originServers := map[string][]CGServer{} // "deliveryServices" in Perl
 
 	qry := ""
@@ -1134,9 +1040,7 @@ const ParentConfigCacheParamUseIP = "use_ip_address"
 const ParentConfigCacheParamRank = "rank"
 const ParentConfigCacheParamNotAParent = "not_a_parent"
 
-type ProfileID int
-
-func getParentConfigServerCacheProfileParams(tx *sql.Tx, serverIDs []int) (map[ProfileID]ProfileCache, error) {
+func getParentConfigServerCacheProfileParams(tx *sql.Tx, serverIDs []int) (map[atscfg.ProfileID]ProfileCache, error) {
 	qry := `
 SELECT
   pr.id,
@@ -1165,7 +1069,7 @@ WHERE
 	defer rows.Close()
 
 	type Param struct {
-		ProfileID ProfileID
+		ProfileID atscfg.ProfileID
 		Name      string
 		Val       string
 	}
@@ -1179,7 +1083,7 @@ WHERE
 		params = append(params, p)
 	}
 
-	sParams := map[ProfileID]ProfileCache{} // TODO change to map of pointers? Does efficiency matter?
+	sParams := map[atscfg.ProfileID]ProfileCache{} // TODO change to map of pointers? Does efficiency matter?
 	for _, param := range params {
 		profileCache, ok := sParams[param.ProfileID]
 		if !ok {
@@ -1264,7 +1168,7 @@ type ParentConfigServerParams struct {
 	QStringHandling bool
 }
 
-func getCDNDomainByProfileID(tx *sql.Tx, profileID ProfileID) (string, bool, error) {
+func getCDNDomainByProfileID(tx *sql.Tx, profileID atscfg.ProfileID) (string, bool, error) {
 	qry := `SELECT domain_name from cdn where id = (select cdn from profile where id = $1)`
 	val := ""
 	if err := tx.QueryRow(qry, profileID).Scan(&val); err != nil {
