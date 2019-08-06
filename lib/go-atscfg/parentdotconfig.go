@@ -55,6 +55,16 @@ const ParentConfigCacheParamNotAParent = "not_a_parent"
 // TODO change, this is terrible practice, using a hard-coded key. What if there were a delivery service named "all_parents" (transliterated Perl)
 const DeliveryServicesAllParentsKey = "all_parents"
 
+type ParentConfigDS struct {
+	Name            tc.DeliveryServiceName
+	QStringIgnore   tc.QStringIgnore
+	OriginFQDN      string
+	MultiSiteOrigin bool
+	OriginShield    string
+	Type            tc.DSType
+	QStringHandling string
+}
+
 type ParentConfigDSTopLevel struct {
 	ParentConfigDS
 	MSOAlgorithm                       string
@@ -84,17 +94,6 @@ func (p ParentInfo) Format() string {
 		host = p.Host + "." + p.Domain
 	}
 	return host + ":" + strconv.Itoa(p.Port) + "|" + p.Weight + ";"
-}
-
-type ParentConfigDS struct {
-	Name            tc.DeliveryServiceName
-	QStringIgnore   tc.QStringIgnore
-	OriginFQDN      string
-	MultiSiteOrigin bool
-	OriginShield    string
-	Type            tc.DSType
-
-	QStringHandling string
 }
 
 type OriginHost string
