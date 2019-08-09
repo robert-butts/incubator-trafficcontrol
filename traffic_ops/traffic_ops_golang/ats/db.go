@@ -198,7 +198,6 @@ type ProfileData struct {
 
 // GetProfileData returns the necessary info about the profile, whether it exists, and any error.
 func GetProfileData(tx *sql.Tx, id int) (ProfileData, bool, error) {
-	// TODO implement, determine what fields are necessary
 	qry := `
 SELECT
   p.name
@@ -693,7 +692,6 @@ type Parameter struct {
 }
 
 func GetParamsByName(tx *sql.Tx, paramName string) ([]Parameter, error) {
-	// TODO implement, determine what fields are necessary
 	qry := `
 SELECT
   p.value,
