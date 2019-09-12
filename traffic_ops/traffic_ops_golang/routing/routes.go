@@ -66,6 +66,7 @@ import (
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/region"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/role"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/server"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/servercapability"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/staticdnsentry"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/status"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/steering"
@@ -348,6 +349,18 @@ func Routes(d ServerData) ([]Route, []RawRoute, http.Handler, error) {
 		{1.3, http.MethodPost, `servers/{id}/deliveryservices$`, server.AssignDeliveryServicesToServerHandler, auth.PrivLevelOperations, Authenticated, nil},
 		{1.3, http.MethodGet, `servers/{host_name}/update_status$`, server.GetServerUpdateStatusHandler, auth.PrivLevelReadOnly, Authenticated, nil},
 
+		{1.4, http.MethodGet, `servers_capabilities/?$`, api.ReadHandler(&servercapability.TOServerCapability{}), auth.PrivLevelReadOnly, Authenticated, nil},
+		{1.4, http.MethodGet, `servers/{id}/capabilities/?$`, api.ReadHandler(&servercapability.TOServerCapability{}), auth.PrivLevelReadOnly, Authenticated, nil},
+		{1.4, http.MethodPut, `servers/{id}/capabilities/?$`, api.UpdateHandler(&servercapability.TOServerCapability{}), auth.PrivLevelOperations, Authenticated, nil},
+
+		{1.4, http.MethodGet, `deliveryservices_required_capabilities/?$`, api.ReadHandler(&servercapability.TODeliveryServiceRequiredCapability{}), auth.PrivLevelReadOnly, Authenticated, nil},
+		{1.4, http.MethodGet, `deliveryservices/{id}/required_capabilities/?$`, api.ReadHandler(&servercapability.TODeliveryServiceRequiredCapability{}), auth.PrivLevelReadOnly, Authenticated, nil},
+		{1.4, http.MethodPut, `deliveryservices/{id}/required_capabilities/?$`, api.UpdateHandler(&servercapability.TODeliveryServiceRequiredCapability{}), auth.PrivLevelOperations, Authenticated, nil},
+
+		{1.4, http.MethodGet, `server_capability_types/?$`, api.ReadHandler(&servercapability.TOServerCapabilityType{}), auth.PrivLevelReadOnly, Authenticated, nil},
+		{1.4, http.MethodPost, `server_capability_types/?$`, api.CreateHandler(&servercapability.TOServerCapabilityType{}), auth.PrivLevelOperations, Authenticated, nil},
+		{1.4, http.MethodDelete, `server_capability_types/{name}/?$`, api.DeleteHandler(&servercapability.TOServerCapabilityType{}), auth.PrivLevelOperations, Authenticated, nil},
+
 		//StaticDNSEntries
 		{1.1, http.MethodGet, `staticdnsentries/?(\.json)?$`, api.ReadHandler(&staticdnsentry.TOStaticDNSEntry{}), auth.PrivLevelReadOnly, Authenticated, nil},
 		{1.3, http.MethodGet, `staticdnsentries/?$`, api.ReadHandler(&staticdnsentry.TOStaticDNSEntry{}), auth.PrivLevelReadOnly, Authenticated, nil},
@@ -405,7 +418,7 @@ func Routes(d ServerData) ([]Route, []RawRoute, http.Handler, error) {
 		{1.1, http.MethodGet, `profiles/{profile-name-or-id}/configfiles/ats/{file}/?$`, atsprofile.GetUnknown, auth.PrivLevelOperations, Authenticated, nil},
 
 		// Cache Configs
-		{1.1, http.MethodGet, `servers/{id-or-host}/configfiles/ats/parent.config/?(\.json)?$`, ats.GetParentDotConfig, auth.PrivLevelOperations, Authenticated, nil},
+		{1.4, http.MethodGet, `servers/{id-or-host}/configfiles/ats/parent.config/?(\.json)?$`, ats.GetParentDotConfig, auth.PrivLevelOperations, Authenticated, nil},
 
 		// Federations
 		{1.4, http.MethodGet, `federations/all/?(\.json)?$`, federations.GetAll, auth.PrivLevelAdmin, Authenticated, nil},

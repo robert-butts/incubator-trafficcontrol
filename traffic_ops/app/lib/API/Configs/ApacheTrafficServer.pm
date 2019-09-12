@@ -1069,12 +1069,14 @@ sub parent_ds_data {
 			my $ds_xml_id                   = $dsinfo->xml_id;
 			my $origin_shield               = $dsinfo->origin_shield;
 			my $multi_site_origin           = $dsinfo->multi_site_origin;
+			my $ds_id                       = $dsinfo->ds_id;
 
 			$response_obj->{dslist}->[$j]->{"org"}                         = $org_fqdn;
 			$response_obj->{dslist}->[$j]->{"qstring_ignore"}              = $qstring_ignore;
 			$response_obj->{dslist}->[$j]->{"ds_xml_id"}                   = $ds_xml_id;
 			$response_obj->{dslist}->[$j]->{"origin_shield"}               = $origin_shield;
 			$response_obj->{dslist}->[$j]->{"multi_site_origin"}           = $multi_site_origin;
+			$response_obj->{dslist}->[$j]->{"ds_id"}                          = $ds_id;
 
 
 			if ( defined( $dsinfo->profile ) ) {
@@ -1100,10 +1102,12 @@ sub parent_ds_data {
 			my $ds_xml_id                   = $dsinfo->xml_id;
 			my $origin_shield               = $dsinfo->origin_shield;
 			my $multi_site_origin           = $dsinfo->multi_site_origin;
+			my $ds_id                       = $dsinfo->ds_id;
 
 			$response_obj->{dslist}->[$j]->{"org"}                         = $org_fqdn;
 			$response_obj->{dslist}->[$j]->{"type"}                        = $ds_type;
 			$response_obj->{dslist}->[$j]->{"qstring_ignore"}              = $qstring_ignore;
+			$response_obj->{dslist}->[$j]->{"ds_id"}                          = $ds_id;
 
 			if ( defined( $dsinfo->profile ) ) {
 				my $dsqstring = $self->db->resultset('ProfileParameter')
@@ -2437,6 +2441,7 @@ sub parent_data {
 			my $secondary_parent = $server_obj->cachegroup->secondary_parent_cachegroup_id // -1;
 			if ( defined($ds_domain) && defined($server_domain) && $ds_domain eq $server_domain ) {
 				my %p = (
+					id               => $row->id,
 					host_name        => $row->host_name,
 					port             => defined($port) ? $port : $row->tcp_port,
 					domain_name      => $row->domain_name,
@@ -2478,6 +2483,18 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 	
 	## By default we're going to assume that our cache is not a top level cache (mids, edges without parents, etc.)
 	my $is_top_level_cache = 0;
+
+	my $server_capabilities;
+	my $rs_server_capabilities = $self->db->resultset('ServerCapabilities');
+	while ( my $sc = $rs_server_capabilities->next ) {
+		$server_capabilities->{$sc->server_id}->{$sc->capability_name} = 1;
+	}
+
+	my %ds_required_capabilities;
+	my $rs_ds_required_capabilities = $self->db->resultset('DeliveryServiceRequiredCapabilities');
+	while ( my $sc = $rs_ds_required_capabilities->next ) {
+		$ds_required_capabilities{$sc->deliveryservice_id}{$sc->capability_name} = 1;
+	}
 
 	## Look up parent cachegroup IDs.
 	my $parent_cachegroup_id =
@@ -2522,6 +2539,7 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 		foreach my $ds ( @{ $data->{dslist} } ) {
 			my $text;
 			my $xml_id                             = $ds->{ds_xml_id};
+			my $ds_id                              = $ds->{ds_id};
 			my $origin_shield                      = $ds->{origin_shield};
 			my $multi_site_origin                  = $ds->{multi_site_origin} || 0;
 			my $mso_algorithm                      = $ds->{'param'}->{'parent.config'}->{'mso.algorithm'} || 'consistent_hash';
@@ -2570,6 +2588,18 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 				my @secondary_parent_info;
 				my @null_parent_info;
 				foreach my $parent (@ranked_parents) {
+					# my $my_server_capabilities = $server_capabilities->{$parent->{id}};
+					# my #my_ds_required_capabilities = $ds_required_capabilities{$ds_id};
+					# my $missing_capability = 0;
+					# foreach my $capability (keys %my_ds_required_capabilities) {
+					# 	if ( !exists($my_server_capabilities{$capability}) ) {
+					# 		$self->app->log->error( "DEBUG: skipping parent " . $parent->host_name . " ds " . $ds_id . " " . $xml_id . " since this server doesn't have the required capability " . $capability );
+					# 		$missing_capability = 1;
+					# 		last;
+					# 	}
+					# }
+					# next if $missing_capability == 1;
+
 					if ( $parent->{primary_parent} ) {
 						push @parent_info, format_parent_info($parent);
 					}
@@ -2640,40 +2670,7 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 	# Caches with parent caches defined
 	else {    #"True" Parent - we are genning a cache config that points to a parent proxy.
 		$parent_info = $self->parent_data($server_obj);
-		my %done = ();
 		my $qsh = $self->profile_param_value( $server_obj->profile->id, 'parent.config', 'psel.qstring_handling');
-		my @parent_info;
-		my @secondary_parent_info;
-		foreach my $parent ( @{ $parent_info->{all_parents} } ) {
-			my $ptxt = format_parent_info($parent);
-			if ( $parent->{primary_parent} ) {
-				push @parent_info, $ptxt;
-			}
-			elsif ( $parent->{secondary_parent} ) {
-				push @secondary_parent_info, $ptxt;
-			}
-		}
-		if ( scalar @parent_info == 0  ) {
-			@parent_info = @secondary_parent_info;
-			@secondary_parent_info = ();
-		}
-		my %seen;
-		@parent_info = grep { !$seen{$_}++ } @parent_info;
-		if ( scalar @secondary_parent_info > 0 ) {
-			my %seen;
-			@secondary_parent_info = grep { !$seen{$_}++ } @secondary_parent_info;
-		}
-		#If the ats version supports it, put secondary parents into secondary parent group.
-		#This will ensure that secondary parents will be unused unless all hosts in the primary group are unavailable.
-		my $parents = '';
-		my $secparents = '';
-		if ( $ats_major_version >= 6 && @secondary_parent_info > 0 ) {
-			$parents = 'parent="' . join( '', sort @parent_info ) . '"';
-			$secparents = ' secondary_parent="' . join( '', sort @secondary_parent_info ) . '"';
-		}
-		else {
-			$parents = 'parent="' . join( '', sort @parent_info ) . join( '', sort @secondary_parent_info ) . '"';
-		}
 
 		my $round_robin = 'round_robin=consistent_hash';
 		my $go_direct   = 'go_direct=false';
@@ -2683,11 +2680,13 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 		}
 
 		if (defined($data->{dslist})) {
+			my %done = ();
 			foreach my $ds ( sort @{ $data->{dslist} } ) {
 				my $text;
 				my $org = $ds->{org};
 				next if !defined $org || $org eq "";
 				next if $done{$org};
+
 				my $org_uri = URI->new($org);
 				if ( $ds->{type} eq "HTTP_NO_CACHE" || $ds->{type} eq "HTTP_LIVE" || $ds->{type} eq "DNS_LIVE" ) {
 					$text .= "dest_domain=" . $org_uri->host . " port=" . $org_uri->port . " go_direct=true\n";
@@ -2708,6 +2707,22 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 					if ( $ds->{qstring_ignore} == 0 && !defined($ds_qsh) ) {
 						$parent_qstring = "consider";
 					}
+
+					# foreach my $ds_id (keys %ds_required_capabilities) {
+					# 	my $ds_caps = %ds_required_capabilities->{$ds_id};
+					# 	foreach my $cap (keys $ds_caps) {
+					# 			$self->app->log->error( "DEBUG outer ds_required_capabilities " . $ds_id . ": " . $cap );
+					# 	}
+					# }
+
+					my $ds_id = $ds->{ds_id};
+					my $ds_caps = %ds_required_capabilities->{$ds_id};
+					# foreach my $cap (keys $ds_caps) {
+					# 		$self->app->log->error( "DEBUG outerx ds_required_capabilities " . $ds_id . ": " . $cap );
+					# }
+
+					my ($parents, $secparents) = $self->get_parent_lists($ds->{ds_id}, $parent_info, $qsh, $ats_major_version, $ds_caps, $server_capabilities);
+
 					$text
 						.= "dest_domain="
 						. $org_uri->host
@@ -2722,6 +2737,9 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 
 		my $default_dest_text;
 		my $parent_select_alg = $self->profile_param_value( $server_obj->profile->id, 'parent.config', 'algorithm', undef );
+
+		my ($parents, $secparents) = $self->get_parent_lists(0, $parent_info, $qsh, $ats_major_version, {}, $server_capabilities);
+
 		$default_dest_text .= "dest_domain=. ";
 		if ( defined($parent_select_alg) && $parent_select_alg eq 'consistent_hash' ) {
 			$default_dest_text .= $parents . $secparents;
@@ -2747,6 +2765,77 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 		return $text;
 	}
 }
+
+sub get_parent_lists {
+	my $self                     = shift;
+	my $ds_id                    = shift;
+	my $parent_info              = shift;
+	my $qsh                      = shift;
+	my $ats_major_version        = shift;
+	my $ds_required_capabilities = shift; # may be an empty hash, if there's no DS, i.e. the default remap rule 
+	my $server_capabilities      = shift;
+
+	# $self->app->log->error( "DEBUG CALLING get_parent_lists for ds " . $ds_id );
+	# $self->app->log->error( "DEBUG CALLING get_parent_lists for ats " . $ats_major_version );
+
+	# foreach my $capability (keys %{ $ds_required_capabilities }) {
+	# 	$self->app->log->error( "DEBUG inner ds_required_capabilities " . $ds_id . "> " . $capability );
+	# }
+
+	my @parent_info;
+	my @secondary_parent_info;
+	foreach my $parent ( @{ $parent_info->{all_parents} } ) {
+
+		my $parent_server_capabilities = $server_capabilities->{$parent->{id}};
+
+		# foreach my $capability (keys %{ $parent_server_capabilities }) {
+		# 	$self->app->log->error( "DEBUG parent_server " . $parent->{host_name} . " capabilities " . $capability );
+		# }
+
+		my $missing_capability = 0;
+		foreach my $capability (keys $ds_required_capabilities) {
+			if ( !exists($parent_server_capabilities->{$capability}) ) {
+				# $self->app->log->error( "DEBUG: skipping parent " . $parent->{host_name} . " ds " . $ds_id . " since this server doesn't have the required capability " . $capability );
+				$missing_capability = 1;
+				last;
+			}
+		}
+		next if $missing_capability == 1;
+
+		my $ptxt = format_parent_info($parent);
+		if ( $parent->{primary_parent} ) {
+			push @parent_info, $ptxt;
+		}
+		elsif ( $parent->{secondary_parent} ) {
+			push @secondary_parent_info, $ptxt;
+		}
+	}
+	if ( scalar @parent_info == 0  ) {
+		@parent_info = @secondary_parent_info;
+		@secondary_parent_info = ();
+	}
+	my %seen;
+	@parent_info = grep { !$seen{$_}++ } @parent_info;
+	if ( scalar @secondary_parent_info > 0 ) {
+		my %seen;
+		@secondary_parent_info = grep { !$seen{$_}++ } @secondary_parent_info;
+	}
+	#If the ats version supports it, put secondary parents into secondary parent group.
+	#This will ensure that secondary parents will be unused unless all hosts in the primary group are unavailable.
+	my $parents = '';
+	my $secparents = '';
+	if ( $ats_major_version >= 6 && @secondary_parent_info > 0 ) {
+		$parents = 'parent="' . join( '', sort @parent_info ) . '"';
+		$secparents = ' secondary_parent="' . join( '', sort @secondary_parent_info ) . '"';
+	}
+	else {
+		$parents = 'parent="' . join( '', sort @parent_info ) . join( '', sort @secondary_parent_info ) . '"';
+	}
+
+	return ($parents, $secparents);
+}
+
+
 
 sub remap_dot_config {
 	my $self       = shift;

@@ -41,6 +41,7 @@ const (
 	CDNs
 	CDNFederations
 	Coordinates
+	DeliveryServicesRequiredCapabilities
 	DeliveryServices
 	DeliveryServiceRequests
 	DeliveryServiceRequestComments
@@ -53,6 +54,8 @@ const (
 	Regions
 	Roles
 	Servers
+	ServerCapabilityTypes
+	ServerCapabilities
 	Statuses
 	StaticDNSEntries
 	SteeringTargets
@@ -68,28 +71,31 @@ type TCObjFuncs struct {
 }
 
 var withFuncs = map[TCObj]TCObjFuncs{
-	CacheGroups:                    {CreateTestCacheGroups, DeleteTestCacheGroups},
-	CacheGroupParameters:           {CreateTestCacheGroupParameters, DeleteTestCacheGroupParameters},
-	CDNs:                           {CreateTestCDNs, DeleteTestCDNs},
-	CDNFederations:                 {CreateTestCDNFederations, DeleteTestCDNFederations},
-	Coordinates:                    {CreateTestCoordinates, DeleteTestCoordinates},
-	DeliveryServices:               {CreateTestDeliveryServices, DeleteTestDeliveryServices},
-	DeliveryServiceRequests:        {CreateTestDeliveryServiceRequests, DeleteTestDeliveryServiceRequests},
-	DeliveryServiceRequestComments: {CreateTestDeliveryServiceRequestComments, DeleteTestDeliveryServiceRequestComments},
-	Divisions:                      {CreateTestDivisions, DeleteTestDivisions},
-	Origins:                        {CreateTestOrigins, DeleteTestOrigins},
-	Parameters:                     {CreateTestParameters, DeleteTestParameters},
-	PhysLocations:                  {CreateTestPhysLocations, DeleteTestPhysLocations},
-	Profiles:                       {CreateTestProfiles, DeleteTestProfiles},
-	ProfileParameters:              {CreateTestProfileParameters, DeleteTestProfileParameters},
-	Regions:                        {CreateTestRegions, DeleteTestRegions},
-	Roles:                          {CreateTestRoles, DeleteTestRoles},
-	Servers:                        {CreateTestServers, DeleteTestServers},
-	Statuses:                       {CreateTestStatuses, DeleteTestStatuses},
-	StaticDNSEntries:               {CreateTestStaticDNSEntries, DeleteTestStaticDNSEntries},
-	SteeringTargets:                {SetupSteeringTargets, DeleteTestSteeringTargets},
-	Tenants:                        {CreateTestTenants, DeleteTestTenants},
-	Types:                          {CreateTestTypes, DeleteTestTypes},
-	Users:                          {CreateTestUsers, ForceDeleteTestUsers},
-	UsersDeliveryServices:          {CreateTestUsersDeliveryServices, DeleteTestUsersDeliveryServices},
+	CacheGroups:                          {CreateTestCacheGroups, DeleteTestCacheGroups},
+	CacheGroupParameters:                 {CreateTestCacheGroupParameters, DeleteTestCacheGroupParameters},
+	CDNs:                                 {CreateTestCDNs, DeleteTestCDNs},
+	CDNFederations:                       {CreateTestCDNFederations, DeleteTestCDNFederations},
+	Coordinates:                          {CreateTestCoordinates, DeleteTestCoordinates},
+	DeliveryServices:                     {CreateTestDeliveryServices, DeleteTestDeliveryServices},
+	DeliveryServiceRequests:              {CreateTestDeliveryServiceRequests, DeleteTestDeliveryServiceRequests},
+	DeliveryServiceRequestComments:       {CreateTestDeliveryServiceRequestComments, DeleteTestDeliveryServiceRequestComments},
+	DeliveryServicesRequiredCapabilities: {CreateTestDeliveryServiceRequiredCapabilities, DeleteTestDeliveryServiceRequiredCapabilities},
+	Divisions:                            {CreateTestDivisions, DeleteTestDivisions},
+	Origins:                              {CreateTestOrigins, DeleteTestOrigins},
+	Parameters:                           {CreateTestParameters, DeleteTestParameters},
+	PhysLocations:                        {CreateTestPhysLocations, DeleteTestPhysLocations},
+	Profiles:                             {CreateTestProfiles, DeleteTestProfiles},
+	ProfileParameters:                    {CreateTestProfileParameters, DeleteTestProfileParameters},
+	Regions:                              {CreateTestRegions, DeleteTestRegions},
+	Roles:                                {CreateTestRoles, DeleteTestRoles},
+	Servers:                              {CreateTestServers, DeleteTestServers},
+	ServerCapabilityTypes:                {CreateTestServerCapabilityTypes, DeleteTestServerCapabilityTypes},
+	ServerCapabilities:                   {CreateTestServerCapabilities, DeleteTestServerCapabilities},
+	Statuses:                             {CreateTestStatuses, DeleteTestStatuses},
+	StaticDNSEntries:                     {CreateTestStaticDNSEntries, DeleteTestStaticDNSEntries},
+	SteeringTargets:                      {SetupSteeringTargets, DeleteTestSteeringTargets},
+	Tenants:                              {CreateTestTenants, DeleteTestTenants},
+	Types:                                {CreateTestTypes, DeleteTestTypes},
+	Users:                                {CreateTestUsers, ForceDeleteTestUsers},
+	UsersDeliveryServices:                {CreateTestUsersDeliveryServices, DeleteTestUsersDeliveryServices},
 }
