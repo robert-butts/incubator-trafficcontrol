@@ -21,9 +21,8 @@ CREATE TABLE IF NOT EXISTS deliveryservices_required_capability (
     deliveryservice_id bigint NOT NULL,
     last_updated timestamp with time zone DEFAULT now() NOT NULL,
 
-    PRIMARY KEY (deliveryservice_id, required_capability),
-    CONSTRAINT fk_deliveryservice_id FOREIGN KEY (deliveryservice_id) REFERENCES deliveryservice(id) ON DELETE CASCADE,
-    CONSTRAINT fk_required_capability FOREIGN KEY (required_capability) REFERENCES server_capability(name) ON DELETE RESTRICT
+    PRIMARY KEY (deliveryservice_id),
+    CONSTRAINT fk_deliveryservice_id FOREIGN KEY (deliveryservice_id) REFERENCES deliveryservice(id) ON DELETE CASCADE
 );
 
 -- +goose Down

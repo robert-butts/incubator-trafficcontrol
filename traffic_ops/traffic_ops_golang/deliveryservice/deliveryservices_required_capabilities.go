@@ -30,7 +30,9 @@ import (
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/dbhelpers"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
-	validation "github.com/go-ozzo/ozzo-validation"
+
+	"github.com/go-ozzo/ozzo-validation"
+	"github.com/jmoiron/sqlx"
 )
 
 const (
@@ -86,7 +88,7 @@ func (rc *RequiredCapability) ParamColumns() map[string]dbhelpers.WhereColumnInf
 // DeleteQuery implements the api.GenericDeleter interface.
 func (rc *RequiredCapability) DeleteQuery() string {
 	return `DELETE FROM deliveryservices_required_capability
-	WHERE deliveryservice_id = :deliveryservice_id AND required_capability = :required_capability`
+	WHERE deliveryservice_id = :deliveryservice_id`
 }
 
 // GetKeyFieldsInfo implements the api.Identifier interface.
@@ -95,10 +97,6 @@ func (rc RequiredCapability) GetKeyFieldsInfo() []api.KeyFieldInfo {
 		{
 			Field: deliveryServiceQueryParam,
 			Func:  api.GetIntKey,
-		},
-		{
-			Field: requiredCapabilityQueryParam,
-			Func:  api.GetStringKey,
 		},
 	}
 }
@@ -109,12 +107,8 @@ func (rc RequiredCapability) GetKeys() (map[string]interface{}, bool) {
 	if rc.DeliveryServiceID == nil {
 		return map[string]interface{}{deliveryServiceQueryParam: 0}, false
 	}
-	if rc.RequiredCapability == nil {
-		return map[string]interface{}{requiredCapabilityQueryParam: 0}, false
-	}
 	return map[string]interface{}{
-		deliveryServiceQueryParam:    *rc.DeliveryServiceID,
-		requiredCapabilityQueryParam: *rc.RequiredCapability,
+		deliveryServiceQueryParam: *rc.DeliveryServiceID,
 	}, true
 }
 
@@ -125,9 +119,6 @@ func (rc *RequiredCapability) SetKeys(keys map[string]interface{}) {
 	// away ok variable is false it will be the zero of the type.
 	id, _ := keys[deliveryServiceQueryParam].(int)
 	rc.DeliveryServiceID = &id
-
-	capability, _ := keys[requiredCapabilityQueryParam].(string)
-	rc.RequiredCapability = &capability
 }
 
 // GetAuditName implements the api.Identifier interface and
@@ -237,6 +228,10 @@ func (rc *RequiredCapability) Create() (error, error, int) {
 		return errors.New("not authorized on this tenant"), nil, http.StatusForbidden
 	}
 
+	if userErr, sysErr, errCode := validateRequiredCapabilities(rc.APIInfo().Tx, *rc.RequiredCapability); userErr != nil || sysErr != nil {
+		return userErr, sysErr, errCode
+	}
+
 	rows, err := rc.APIInfo().Tx.NamedQuery(rcInsertQuery(), rc)
 	if err != nil {
 		return api.ParseDBError(err)
@@ -299,4 +294,45 @@ required_capability,
 deliveryservice_id) VALUES (
 :required_capability,
 :deliveryservice_id) RETURNING deliveryservice_id, required_capability, last_updated`
+}
+
+// validateCapabilities validates the given required capabilities expression.
+// Returns the user error, the system error, and the HTTP error code.
+func validateRequiredCapabilities(tx *sqlx.Tx, requiredCapsExpr string) (error, error, int) {
+	expr, err := util.ParseBoolExpr(requiredCapsExpr)
+	if err != nil {
+		return errors.New("Required capability '" + requiredCapsExpr + "' is not a valid expression: " + err.Error()), nil, http.StatusBadRequest
+	}
+
+	exprCaps := expr.Symbols()
+
+	dbCaps, err := getServerCapabilities(tx)
+	if err != nil {
+		return nil, errors.New("received error querying for user's tenants: " + err.Error()), http.StatusInternalServerError
+	}
+
+	for exprCap, _ := range exprCaps {
+		if _, ok := dbCaps[exprCap]; !ok {
+			return errors.New("Required capability '" + requiredCapsExpr + "' capability '" + exprCap + "' not found"), nil, http.StatusBadRequest
+		}
+	}
+	return nil, nil, http.StatusOK
+}
+
+func getServerCapabilities(tx *sqlx.Tx) (map[string]struct{}, error) {
+	rows, err := tx.Query(`SELECT name FROM server_capability`)
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	caps := map[string]struct{}{}
+	for rows.Next() {
+		cap := ""
+		if err := rows.Scan(&cap); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		caps[cap] = struct{}{}
+	}
+	return caps, nil
 }

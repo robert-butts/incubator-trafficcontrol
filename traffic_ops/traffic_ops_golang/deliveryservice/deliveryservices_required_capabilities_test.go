@@ -70,12 +70,18 @@ func TestCreateDeliveryServicesRequiredCapability(t *testing.T) {
 			},
 		},
 		tc.DeliveryServicesRequiredCapability{
-			DeliveryServiceID: util.IntPtr(1),
-			XMLID:             util.StrPtr("ds1"),
+			DeliveryServiceID:  util.IntPtr(1),
+			XMLID:              util.StrPtr("ds1"),
+			RequiredCapability: util.StrPtr("mem"),
 		},
 	}
 
 	mockTenantID(t, mock, 1)
+
+	selectRows := sqlmock.NewRows([]string{"name"}).AddRow(
+		"mem",
+	)
+	mock.ExpectQuery("SELECT name FROM server_capability").WillReturnRows(selectRows)
 
 	rows := sqlmock.NewRows([]string{"required_capability", "deliveryservice_id", "last_updated"}).AddRow(
 		util.StrPtr("mem"),
