@@ -23,6 +23,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-atscfg"
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/lib/go-tc"
+	"github.com/apache/trafficcontrol/lib/go-util"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/dbhelpers"
 	"github.com/lib/pq"
@@ -218,4 +220,33 @@ INSERT INTO profile_parameter (profile, parameter)
 	}
 
 	return dses, nil
+}
+
+// validateDeliveryServiceServersCapabilities validates that the given delivery services have all the capabilities required by the given server.
+// Returns a user error, a system error, and the HTTP error code to return to the user.
+// On successful validation, the user error and system error will both be nil.
+func validateDeliveryServiceServersCapabilities(tx *sql.Tx, serverID int, dsIDs []int) (error, error, int) {
+	serverCapses, err := dbhelpers.GetServersServerCapabilities(tx, []int{serverID})
+	if err != nil {
+		return nil, errors.New("getting server server capabilities: " + err.Error()), http.StatusInternalServerError
+	}
+	serverCaps := serverCapses[serverID]
+
+	dsRequiredCaps, err := dbhelpers.GetDeliveryServiceRequiredCapabilities(tx, dsIDs)
+	if err != nil {
+		return nil, errors.New("getting ds required capabilities: " + err.Error()), http.StatusInternalServerError
+	}
+
+	for dsID, dsRequiredCap := range dsRequiredCaps {
+		dsRequiredCapsExpr, err := util.ParseBoolExpr(dsRequiredCap)
+		if err != nil {
+			return nil, fmt.Errorf("Delivery Service %v required capability '%s' is not a valid expression! Parse Error: '%v'! But it's in the database! This should not have been validated or allowed into the DB! All Server assignments will fail on this DS until this is fixed!!", dsID, dsRequiredCaps, err), http.StatusInternalServerError
+		}
+
+		if !dsRequiredCapsExpr.Eval(serverCaps) {
+			return fmt.Errorf("server %v does not fulfill capability requirements of delivery services %v", serverID, dsID), nil, http.StatusBadRequest
+		}
+	}
+
+	return nil, nil, http.StatusOK
 }

@@ -346,3 +346,130 @@ func GetCacheGroupNameFromID(tx *sql.Tx, id int64) (tc.CacheGroupName, bool, err
 	}
 	return tc.CacheGroupName(name), true, nil
 }
+
+func GetServerCapabilities(tx *sql.Tx) (map[string]struct{}, error) {
+	rows, err := tx.Query(`SELECT name FROM server_capability`)
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	caps := map[string]struct{}{}
+	for rows.Next() {
+		cap := ""
+		if err := rows.Scan(&cap); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		caps[cap] = struct{}{}
+	}
+	return caps, nil
+}
+
+// GetServersServerCapabilities returns a map[serverID][capabilityName].
+func GetServersServerCapabilities(tx *sql.Tx, serverIDs []int) (map[int]map[string]struct{}, error) {
+	qry := `
+SELECT
+  server,
+  server_capability
+FROM
+  server_server_capability
+WHERE
+  server = ANY($1)
+`
+	rows, err := tx.Query(qry, pq.Array(serverIDs))
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	serverCapabilities := map[int]map[string]struct{}{}
+	for _, serverID := range serverIDs {
+		serverCapabilities[serverID] = map[string]struct{}{}
+	}
+	for rows.Next() {
+		serverID := 0
+		capabilityName := ""
+		if err := rows.Scan(&serverID, &capabilityName); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		serverCapabilities[serverID][capabilityName] = struct{}{}
+	}
+	return serverCapabilities, nil
+}
+
+// GetServersServerCapabilities returns a map[serverHostName][capabilityName].
+func GetServersServerCapabilitiesByName(tx *sql.Tx, serverHostNames []string) (map[string]map[string]struct{}, error) {
+	qry := `
+SELECT
+  s.host_name,
+  ssc.server_capability
+FROM
+  server_server_capability ssc
+  JOIN server s ON s.id = ssc.server
+WHERE
+  s.host_name = ANY($1)
+`
+	rows, err := tx.Query(qry, pq.Array(serverHostNames))
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	serverCapabilities := map[string]map[string]struct{}{}
+	for _, serverHostName := range serverHostNames {
+		serverCapabilities[serverHostName] = map[string]struct{}{}
+	}
+	for rows.Next() {
+		serverHostName := ""
+		capabilityName := ""
+		if err := rows.Scan(&serverHostName, &capabilityName); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		serverCapabilities[serverHostName][capabilityName] = struct{}{}
+	}
+	return serverCapabilities, nil
+}
+
+// GetDeliveryServiceRequiredCapabilities returns the delivery services' required capabilities and any error.
+// Returns a map[dsID]requiredCapabilities.
+func GetDeliveryServiceRequiredCapabilities(tx *sql.Tx, dsIDs []int) (map[int]string, error) {
+	qry := `SELECT id, required_capability FROM deliveryservice WHERE id = ANY($1)`
+	rows, err := tx.Query(qry, pq.Array(dsIDs))
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	requiredCapabilities := map[int]string{}
+	for rows.Next() {
+		dsID := 0
+		requiredCapability := ""
+		if err := rows.Scan(&dsID, &requiredCapability); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		requiredCapabilities[dsID] = requiredCapability
+	}
+	return requiredCapabilities, nil
+}
+
+// GetDeliveryServiceRequiredCapabilitiesByName returns the delivery services' required capabilities and any error.
+// Returns a map[dsName]requiredCapabilities.
+func GetDeliveryServiceRequiredCapabilitiesByName(tx *sql.Tx, dsNames []string) (map[string]string, error) {
+	qry := `SELECT xml_id, required_capability FROM deliveryservice WHERE xml_id = ANY($1)`
+	rows, err := tx.Query(qry, pq.Array(dsNames))
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	requiredCapabilities := map[string]string{}
+	for rows.Next() {
+		dsName := ""
+		requiredCapability := ""
+		if err := rows.Scan(&dsName, &requiredCapability); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		requiredCapabilities[dsName] = requiredCapability
+	}
+	return requiredCapabilities, nil
+}

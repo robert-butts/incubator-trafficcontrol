@@ -55,6 +55,8 @@ func GetTypeData(tx *sql.Tx, id int) (string, string, bool, error) {
 		if err == sql.ErrNoRows {
 			return "", "", false, nil
 		}
+		// TODO Validate returns errors to the user. Need to fix this to log, but not return to the user.
+		//      Bigger picture, it seems like the Validate interface needs to return a (userErr, sysErr, errCode) ?
 		return "", "", false, errors.New("querying type data: " + err.Error())
 	}
 	useInTable := ""

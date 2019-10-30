@@ -331,6 +331,11 @@ func GetReplaceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if userErr, sysErr, errCode := validateDeliveryServiceServersCapabilities(inf.Tx.Tx, *dsId, servers); userErr != nil || sysErr != nil {
+		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
+		return
+	}
+
 	if *payload.Replace {
 		// delete existing
 		_, err := inf.Tx.Tx.Exec("DELETE FROM deliveryservice_server WHERE deliveryservice = $1", *dsId)
@@ -399,6 +404,11 @@ func GetCreateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	payload.XmlId = dsName
 	serverNames := payload.ServerNames
+
+	if userErr, sysErr, errCode := validateDeliveryServiceServersCapabilitiesByName(inf.Tx.Tx, dsName, serverNames); userErr != nil || sysErr != nil {
+		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
+		return
+	}
 
 	res, err := inf.Tx.Tx.Exec(`INSERT INTO deliveryservice_server (deliveryservice, server) SELECT $1, id FROM server WHERE host_name = ANY($2::text[])`, ds.ID, pq.Array(serverNames))
 	if err != nil {
@@ -690,4 +700,58 @@ WHERE
 	}
 	di.Type = tc.DSTypeFromString(string(di.Type))
 	return di, true, nil
+}
+
+// validateDeliveryServiceServersCapabilities validates that the given servers have all the capabilities required by the given DS.
+// Returns a user error, a system error, and the HTTP error code to return to the user.
+// On successful validation, the user error and system error will both be nil.
+func validateDeliveryServiceServersCapabilities(tx *sql.Tx, dsID int, serverIDs []int) (error, error, int) {
+	dsRequiredCaps, err := dbhelpers.GetDeliveryServiceRequiredCapabilities(tx, []int{dsID})
+	if err != nil {
+		return nil, errors.New("getting ds required capabilities: " + err.Error()), http.StatusInternalServerError
+	}
+	dsRequiredCapsExpr, err := util.ParseBoolExpr(dsRequiredCaps[dsID])
+	if err != nil {
+		return nil, fmt.Errorf("Delivery Service %v required capability '%s' is not a valid expression! Parse Error: '%v'! But it's in the database! This should not have been validated or allowed into the DB! All Server assignments will fail on this DS until this is fixed!!", dsID, dsRequiredCaps, err), http.StatusInternalServerError
+	}
+
+	serverCapses, err := dbhelpers.GetServersServerCapabilities(tx, serverIDs)
+	if err != nil {
+		return nil, errors.New("getting server server capabilities: " + err.Error()), http.StatusInternalServerError
+	}
+
+	for server, serverCaps := range serverCapses {
+		if !dsRequiredCapsExpr.Eval(serverCaps) {
+			return fmt.Errorf("server %v does not fulfill capability requirements of delivery services %v", server, dsID), nil, http.StatusBadRequest
+		}
+	}
+
+	return nil, nil, http.StatusOK
+}
+
+// validateDeliveryServiceServersCapabilitiesByName validates that the given servers have all the capabilities required by the given DS.
+// Returns a user error, a system error, and the HTTP error code to return to the user.
+// On successful validation, the user error and system error will both be nil.
+func validateDeliveryServiceServersCapabilitiesByName(tx *sql.Tx, dsName string, serverNames []string) (error, error, int) {
+	dsRequiredCaps, err := dbhelpers.GetDeliveryServiceRequiredCapabilitiesByName(tx, []string{dsName})
+	if err != nil {
+		return nil, errors.New("getting ds required capabilities: " + err.Error()), http.StatusInternalServerError
+	}
+	dsRequiredCapsExpr, err := util.ParseBoolExpr(dsRequiredCaps[dsName])
+	if err != nil {
+		return nil, fmt.Errorf("Delivery Service %v required capability '%s' is not a valid expression! Parse Error: '%v'! But it's in the database! This should not have been validated or allowed into the DB! All Server assignments will fail on this DS until this is fixed!!", dsName, dsRequiredCaps, err), http.StatusInternalServerError
+	}
+
+	serverCapses, err := dbhelpers.GetServersServerCapabilitiesByName(tx, serverNames)
+	if err != nil {
+		return nil, errors.New("getting server server capabilities: " + err.Error()), http.StatusInternalServerError
+	}
+
+	for serverHostName, serverCaps := range serverCapses {
+		if !dsRequiredCapsExpr.Eval(serverCaps) {
+			return fmt.Errorf("server '%v' does not fulfill capability requirements of delivery service '%v'", serverHostName, dsName), nil, http.StatusBadRequest
+		}
+	}
+
+	return nil, nil, http.StatusOK
 }

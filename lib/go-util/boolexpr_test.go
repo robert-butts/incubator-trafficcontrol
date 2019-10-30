@@ -391,3 +391,56 @@ ALLIGATOR   # must be an alligator
 	}
 
 }
+
+func TestEvalBoolExprEmptySymbols(t *testing.T) {
+	expr, err := ParseBoolExpr("")
+	if err != nil {
+		t.Fatalf("error expected nil, actual: %v", err)
+	}
+
+	if len(expr.Symbols()) > 0 {
+		t.Errorf("symbols expected 0, actual: %+v", expr.Symbols())
+	}
+
+	if !expr.Eval(map[string]struct{}{"foo": {}}) {
+		t.Errorf("empty eval expected true, actual: false")
+	}
+
+	expr, err = ParseBoolExpr("foo")
+	if err != nil {
+		t.Fatalf("error expected nil, actual: %v", err)
+	}
+
+	if expr.Eval(nil) {
+		t.Errorf("eval expected false, actual: true")
+	}
+
+	if expr.Eval(map[string]struct{}{}) {
+		t.Errorf("eval expected false, actual: true")
+	}
+
+	expr, err = ParseBoolExpr("")
+	if err != nil {
+		t.Fatalf("error expected nil, actual: %v", err)
+	}
+
+	if !expr.Eval(nil) {
+		t.Errorf("empty value eval expected true, actual: false")
+	}
+
+	if !expr.Eval(map[string]struct{}{}) {
+		t.Errorf("eval expected true, actual: false")
+	}
+}
+
+func TestEvalBoolExprAmbiguity(t *testing.T) {
+	if _, err := ParseBoolExpr("A & B | C"); err == nil {
+		t.Fatalf("error expected not nil, actual: %v", err)
+	}
+	if _, err := ParseBoolExpr("A & (B) | C"); err == nil {
+		t.Fatalf("error expected not nil, actual: %v", err)
+	}
+	if _, err := ParseBoolExpr("A & !B | C"); err == nil {
+		t.Fatalf("error expected not nil, actual: %v", err)
+	}
+}

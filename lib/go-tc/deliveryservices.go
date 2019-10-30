@@ -6,14 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 
 	"github.com/apache/trafficcontrol/lib/go-tc/tovalidate"
 	"github.com/apache/trafficcontrol/lib/go-util"
 
+	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/asaskevich/govalidator"
-	validation "github.com/go-ozzo/ozzo-validation"
+	"github.com/go-ozzo/ozzo-validation"
 )
 
 /*
@@ -165,6 +167,7 @@ type DeliveryServiceNullable struct {
 	ConsistentHashRegex       *string  `json:"consistentHashRegex"`
 	ConsistentHashQueryParams []string `json:"consistentHashQueryParams"`
 	MaxOriginConnections      *int     `json:"maxOriginConnections" db:"max_origin_connections"`
+	RequiredCapabilities      *string  `json:"requiredCapabilities" db:"required_capabilities"`
 }
 
 type DeliveryServiceNullableV13 struct {
@@ -340,6 +343,9 @@ func (ds *DeliveryServiceNullable) Sanitize() {
 		s := DeepCachingType("")
 		ds.DeepCachingType = &s
 	}
+	if ds.RequiredCapabilities == nil {
+		ds.RequiredCapabilities = util.StrPtr("")
+	}
 	*ds.DeepCachingType = DeepCachingTypeFromString(string(*ds.DeepCachingType))
 }
 
@@ -398,6 +404,49 @@ func (ds *DeliveryServiceNullable) validateTypeFields(tx *sql.Tx) error {
 	return nil
 }
 
+// validateCapabilities validates the given required capabilities expression.
+// Returns the user error, the system error, and the HTTP error code.
+func validateRequiredCapabilities(tx *sql.Tx, requiredCapsExpr string) (error, error, int) {
+	expr, err := util.ParseBoolExpr(requiredCapsExpr)
+	if err != nil {
+		return errors.New("Required capability '" + requiredCapsExpr + "' is not a valid expression: " + err.Error()), nil, http.StatusBadRequest
+	}
+
+	exprCaps := expr.Symbols()
+
+	dbCaps, err := getServerCapabilities(tx)
+	if err != nil {
+		return nil, errors.New("received error querying for user's tenants: " + err.Error()), http.StatusInternalServerError
+	}
+
+	for exprCap, _ := range exprCaps {
+		if _, ok := dbCaps[exprCap]; !ok {
+			return errors.New("Required capability '" + requiredCapsExpr + "' capability '" + exprCap + "' not found"), nil, http.StatusBadRequest
+		}
+	}
+	return nil, nil, http.StatusOK
+}
+
+func getServerCapabilities(tx *sql.Tx) (map[string]struct{}, error) {
+	// TODO remove duplicate code with traffic_ops_golang/dbhelpers?
+	//      dbhelpers shouldn't really be pulling db code from here, not sure the right solution.
+	rows, err := tx.Query(`SELECT name FROM server_capability`)
+	if err != nil {
+		return nil, errors.New("querying: " + err.Error())
+	}
+	defer rows.Close()
+
+	caps := map[string]struct{}{}
+	for rows.Next() {
+		cap := ""
+		if err := rows.Scan(&cap); err != nil {
+			return nil, errors.New("scanning: " + err.Error())
+		}
+		caps[cap] = struct{}{}
+	}
+	return caps, nil
+}
+
 func (ds *DeliveryServiceNullable) Validate(tx *sql.Tx) error {
 	ds.Sanitize()
 	neverOrAlways := validation.NewStringRule(tovalidate.IsOneOfStringICase("NEVER", "ALWAYS"),
@@ -422,10 +471,21 @@ func (ds *DeliveryServiceNullable) Validate(tx *sql.Tx) error {
 	if err := ds.validateTypeFields(tx); err != nil {
 		errs = append(errs, errors.New("type fields: "+err.Error()))
 	}
-	if len(errs) == 0 {
-		return nil
+	if len(errs) != 0 {
+		return util.JoinErrs(errs)
 	}
-	return util.JoinErrs(errs)
+
+	if userErr, sysErr, _ := validateRequiredCapabilities(tx, *ds.RequiredCapabilities); userErr != nil || sysErr != nil {
+		if sysErr != nil {
+			log.Errorln("Validating delivery service: " + sysErr.Error())
+		}
+		if userErr == nil {
+			userErr = errors.New("internal server error validating required capabilities, please contact an administrator.")
+		}
+		return userErr
+	}
+
+	return nil
 }
 
 // Value implements the driver.Valuer interface

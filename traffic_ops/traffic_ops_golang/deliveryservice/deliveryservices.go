@@ -248,6 +248,7 @@ func createV14(w http.ResponseWriter, r *http.Request, inf *api.APIInfo, reqDS t
 		&ds.RegexRemap,
 		&ds.RegionalGeoBlocking,
 		&ds.RemapText,
+		&ds.RequiredCapabilities,
 		&ds.RoutingName,
 		&ds.SigningAlgorithm,
 		&ds.SSLKeyVersion,
@@ -638,6 +639,7 @@ func updateV14(w http.ResponseWriter, r *http.Request, inf *api.APIInfo, reqDS *
 		&ds.RegexRemap,
 		&ds.RegionalGeoBlocking,
 		&ds.RemapText,
+		&ds.RequiredCapabilities,
 		&ds.RoutingName,
 		&ds.SigningAlgorithm,
 		&ds.SSLKeyVersion,
@@ -1024,6 +1026,7 @@ func GetDeliveryServices(query string, queryValues map[string]interface{}, tx *s
 			&ds.RegexRemap,
 			&ds.RegionalGeoBlocking,
 			&ds.RemapText,
+			&ds.RequiredCapabilities,
 			&ds.RoutingName,
 			&ds.SigningAlgorithm,
 			&ds.SSLKeyVersion,
@@ -1554,6 +1557,7 @@ ds.range_request_handling,
 ds.regex_remap,
 ds.regional_geo_blocking,
 ds.remap_text,
+ds.required_capabilities,
 ds.routing_name,
 ds.signing_algorithm,
 ds.ssl_key_version,
@@ -1618,18 +1622,19 @@ range_request_handling=$38,
 regex_remap=$39,
 regional_geo_blocking=$40,
 remap_text=$41,
-routing_name=$42,
-signing_algorithm=$43,
-ssl_key_version=$44,
-tenant_id=$45,
-tr_request_headers=$46,
-tr_response_headers=$47,
-type=$48,
-xml_id=$49,
-anonymous_blocking_enabled=$50,
-consistent_hash_regex=$51,
-max_origin_connections=$52
-WHERE id=$53
+required_capabilities=$42,
+routing_name=$43,
+signing_algorithm=$44,
+ssl_key_version=$45,
+tenant_id=$46,
+tr_request_headers=$47,
+tr_response_headers=$48,
+type=$49,
+xml_id=$50,
+anonymous_blocking_enabled=$51,
+consistent_hash_regex=$52,
+max_origin_connections=$53
+WHERE id=$54
 RETURNING last_updated
 `
 }
@@ -1681,6 +1686,7 @@ range_request_handling,
 regex_remap,
 regional_geo_blocking,
 remap_text,
+required_capabilities,
 routing_name,
 signing_algorithm,
 ssl_key_version,
@@ -1690,7 +1696,7 @@ tr_response_headers,
 type,
 xml_id
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,$49,$50,$51,$52,$53)
 RETURNING id, last_updated
 `
 }

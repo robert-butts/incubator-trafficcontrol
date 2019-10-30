@@ -22,11 +22,14 @@ package deliveryservice
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/apache/trafficcontrol/lib/go-tc"
+	"github.com/apache/trafficcontrol/lib/go-util"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/api"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/dbhelpers"
 	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/tenant"
 )
 
@@ -38,7 +41,9 @@ func GetServersEligible(w http.ResponseWriter, r *http.Request) {
 	}
 	defer inf.Close()
 
-	dsTenantID, ok, err := getDSTenantIDByID(inf.Tx.Tx, inf.IntParams["id"])
+	dsID := inf.IntParams["id"]
+
+	dsTenantID, ok, err := getDSTenantIDByID(inf.Tx.Tx, dsID)
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("checking tenant: "+err.Error()))
 		return
@@ -55,12 +60,54 @@ func GetServersEligible(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	servers, err := getEligibleServers(inf.Tx.Tx, inf.IntParams["id"])
+	servers, err := getEligibleServers(inf.Tx.Tx, dsID)
 	if err != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("getting eligible servers: "+err.Error()))
 		return
 	}
+
+	servers, err = filterServersWithRequiredCapabilities(inf.Tx.Tx, servers, dsID)
+	if err != nil {
+		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("filtering eligible servers for required capabilities: "+err.Error()))
+		return
+	}
+
 	api.WriteResp(w, r, servers)
+}
+
+// filterServersWithRequiredCapabilities takes the list of servers, and returns only the servers which fulfill the required capabilities of dsID.
+func filterServersWithRequiredCapabilities(tx *sql.Tx, servers []tc.DSServer, dsID int) ([]tc.DSServer, error) {
+	serverIDs := []int{}
+	for _, server := range servers {
+		if server.ID == nil {
+			return nil, errors.New("got server with nil id! Should never happen!")
+		}
+		serverIDs = append(serverIDs, *server.ID)
+	}
+
+	serverCaps, err := dbhelpers.GetServersServerCapabilities(tx, serverIDs)
+	if err != nil {
+		return nil, errors.New("getting server capabilities: " + err.Error())
+	}
+
+	requiredCaps, err := dbhelpers.GetDeliveryServiceRequiredCapabilities(tx, []int{dsID})
+	if err != nil {
+		return nil, errors.New("getting ds required capabilities: " + err.Error())
+	}
+
+	requiredCapsExpr, err := util.ParseBoolExpr(requiredCaps[dsID])
+	if err != nil {
+		return nil, fmt.Errorf("Delivery Service %v required capability '%s' is not a valid expression! Parse Error: '%v'! But it's in the database! This should not have been validated or allowed into the DB! All Server assignments will fail on this DS until this is fixed!!", dsID, requiredCaps, err)
+	}
+
+	eligibleServers := []tc.DSServer{}
+	for _, server := range servers {
+		if !requiredCapsExpr.Eval(serverCaps[*server.ID]) {
+			continue
+		}
+		eligibleServers = append(eligibleServers, server)
+	}
+	return eligibleServers, nil
 }
 
 const JumboFrameBPS = 9000

@@ -63,7 +63,7 @@ func ParseBoolExpr(xpr string) (BoolExpr, error) {
 		return nil, err
 	}
 	if newPos != len(xpr) {
-		return nil, fmt.Errorf("malformed expression, read as far as %v an got confused", newPos) // TODO verify for certain this isn't a security risk to let attackers know.
+		return nil, fmt.Errorf("malformed expression, read as far as character %v an got confused", newPos) // TODO verify for certain this isn't a security risk to let attackers know.
 	}
 	return expr, nil
 }
@@ -132,14 +132,15 @@ func parseBoolExpr(str string, pos int, depth int) (BoolExpr, int, error) {
 			}
 			newPos++ // increment past the closing )
 			if inNot {
-				parenExpr = boolExprNot{e: parenExpr}
+				parenExpr = boolExprNot{ne: parenExpr}
 				inNot = false
 			}
+			parenExpr = boolExprParen{pe: parenExpr}
 			newExpr, err := makeBoolExprOpExpr(expr, parenExpr, op)
 			if err != nil {
 				return nil, 0, errors.New("making expression: " + err.Error())
 			}
-			expr = boolExprParen{e: newExpr}
+			expr = newExpr
 			op = boolExprOpTypeNone
 			pos = newPos
 		case c == '!':
@@ -166,7 +167,7 @@ func parseBoolExpr(str string, pos int, depth int) (BoolExpr, int, error) {
 			// 	return nil, 0, errors.New("malformed symbol: " + err.Error()) // should never happen
 			// }
 			if inNot {
-				symExpr = boolExprNot{e: symExpr}
+				symExpr = boolExprNot{ne: symExpr}
 				inNot = false
 			}
 			newExpr, err := makeBoolExprOpExpr(expr, symExpr, op)
@@ -198,12 +199,12 @@ func makeBoolExprOpExpr(expr1 BoolExpr, expr2 BoolExpr, op boolExprOpType) (Bool
 		if _, ok := expr1.(boolExprOr); ok {
 			return nil, errors.New("'and' operator after a different operator without parenthesis; ambiguity is not allowed, use parenthesis.")
 		}
-		return boolExprAnd{expr1: expr1, expr2: expr2}, nil
+		return boolExprAnd{andExpr1: expr1, andExpr2: expr2}, nil
 	case boolExprOpTypeOr:
 		if _, ok := expr1.(boolExprAnd); ok {
 			return nil, errors.New("'or' operator after a different operator without parenthesis; ambiguity is not allowed, use parenthesis.")
 		}
-		return boolExprOr{expr1: expr1, expr2: expr2}, nil
+		return boolExprOr{orExpr1: expr1, orExpr2: expr2}, nil
 	}
 	return nil, fmt.Errorf("unknown op type %v", op) // should never happen
 }
@@ -281,6 +282,9 @@ type boolExprSymbol struct {
 }
 
 func (e boolExprSymbol) Eval(vals map[string]struct{}) bool {
+	if vals == nil {
+		return false
+	}
 	_, ok := vals[e.symbol]
 	return ok
 }
@@ -290,17 +294,17 @@ func (e boolExprSymbol) Symbols() map[string]struct{} {
 }
 
 type boolExprAnd struct {
-	expr1 BoolExpr
-	expr2 BoolExpr
+	andExpr1 BoolExpr
+	andExpr2 BoolExpr
 }
 
 func (e boolExprAnd) Eval(vals map[string]struct{}) bool {
-	return e.expr1.Eval(vals) && e.expr2.Eval(vals)
+	return e.andExpr1.Eval(vals) && e.andExpr2.Eval(vals)
 }
 
 func (e boolExprAnd) Symbols() map[string]struct{} {
-	e1Syms := e.expr1.Symbols()
-	e2Syms := e.expr2.Symbols()
+	e1Syms := e.andExpr1.Symbols()
+	e2Syms := e.andExpr2.Symbols()
 	for sym, _ := range e2Syms {
 		e1Syms[sym] = struct{}{}
 	}
@@ -308,17 +312,17 @@ func (e boolExprAnd) Symbols() map[string]struct{} {
 }
 
 type boolExprOr struct {
-	expr1 BoolExpr
-	expr2 BoolExpr
+	orExpr1 BoolExpr
+	orExpr2 BoolExpr
 }
 
 func (e boolExprOr) Eval(vals map[string]struct{}) bool {
-	return e.expr1.Eval(vals) || e.expr2.Eval(vals)
+	return e.orExpr1.Eval(vals) || e.orExpr2.Eval(vals)
 }
 
 func (e boolExprOr) Symbols() map[string]struct{} {
-	e1Syms := e.expr1.Symbols()
-	e2Syms := e.expr2.Symbols()
+	e1Syms := e.orExpr1.Symbols()
+	e2Syms := e.orExpr2.Symbols()
 	for sym, _ := range e2Syms {
 		e1Syms[sym] = struct{}{}
 	}
@@ -328,27 +332,27 @@ func (e boolExprOr) Symbols() map[string]struct{} {
 // boolExprParen only serves to provide a wrapper, so we can detect "AndExpr | FOO" as invalid.
 // Without this, "(A & B) | C" would be detected as "AndExpr | C". This gives us a different type.
 type boolExprParen struct {
-	e BoolExpr
+	pe BoolExpr
 }
 
 func (e boolExprParen) Eval(vals map[string]struct{}) bool {
-	return e.e.Eval(vals)
+	return e.pe.Eval(vals)
 }
 
 func (e boolExprParen) Symbols() map[string]struct{} {
-	return e.e.Symbols()
+	return e.pe.Symbols()
 }
 
 type boolExprNot struct {
-	e BoolExpr
+	ne BoolExpr
 }
 
 func (e boolExprNot) Eval(vals map[string]struct{}) bool {
-	return !e.e.Eval(vals)
+	return !e.ne.Eval(vals)
 }
 
 func (e boolExprNot) Symbols() map[string]struct{} {
-	return e.e.Symbols()
+	return e.ne.Symbols()
 }
 
 type boolExprTrue struct{}
