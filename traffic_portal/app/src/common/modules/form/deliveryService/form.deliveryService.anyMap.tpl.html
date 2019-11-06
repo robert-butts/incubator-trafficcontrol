@@ -307,6 +307,19 @@ under the License.
                             </aside>
                         </div>
                     </div>
+                    <div class="form-group" ng-class="{'has-error': hasError(cacheConfig.requiredCapabilities), 'has-feedback': hasError(cacheConfig.requiredCapabilities)}">
+                        <label class="has-tooltip control-label col-md-2 col-sm-2 col-xs-12" for="requiredCapabilities">Required Capabilities<div class="helptooltip">
+                            <div class="helptext">Server Capabilities required by this Delivery Service.</div>
+                        </div>
+                        </label>
+                        <div class="col-md-10 col-sm-10 col-xs-12">
+                            <textarea id="requiredCapabilities" name="requiredCapabilities" class="form-control" ng-model="deliveryService.requiredCapabilities" spellcheck="true" rows="3"></textarea>
+                            <aside class="current-value" ng-if="settings.isRequest" ng-show="open() && deliveryService.requiredCapabilities != dsCurrent.requiredCapabilities">
+                                <h3>Current Value</h3>
+                                <pre>{{::dsCurrent.requiredCapabilities}}</pre>
+                            </aside>
+                        </div>
+                    </div>
                 </ng-form>
             </fieldset>
             <fieldset>
