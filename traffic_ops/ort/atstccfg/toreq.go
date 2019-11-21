@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/apache/trafficcontrol/lib/go-atscfg"
 	"github.com/apache/trafficcontrol/lib/go-log"
@@ -419,6 +420,10 @@ func GetServerCapabilitiesByID(cfg TCCfg, serverIDs []int) (map[int]map[atscfg.S
 		// TODO add list of IDs to API+Client
 		toServerCaps, reqInf, err := (*cfg.TOClient).GetServerServerCapabilities(nil, nil, nil)
 		if err != nil {
+			if strings.Contains(err.Error(), "404 Not Found") {
+				log.Warnln("Traffic Ops returned 404 for Server Capability endpoint, assuming no capabilities!")
+				return nil
+			}
 			return errors.New("getting server caps from Traffic Ops '" + MaybeIPStr(reqInf) + "': " + err.Error())
 		}
 		serverCaps := obj.(*map[int]map[atscfg.ServerCapability]struct{})
@@ -455,6 +460,10 @@ func GetDeliveryServiceRequiredCapabilitiesByID(cfg TCCfg, dsIDs []int) (map[int
 		// TODO add list of IDs to API+Client
 		toDSCaps, reqInf, err := (*cfg.TOClient).GetDeliveryServicesRequiredCapabilities(nil, nil, nil)
 		if err != nil {
+			if strings.Contains(err.Error(), "404 Not Found") {
+				log.Warnln("Traffic Ops returned 404 for Server Required Capabilities endpoint, assuming no capabilities!")
+				return nil
+			}
 			return errors.New("getting ds caps from Traffic Ops '" + MaybeIPStr(reqInf) + "': " + err.Error())
 		}
 		dsCaps := obj.(*map[int]map[atscfg.ServerCapability]struct{})

@@ -238,3 +238,201 @@ func TestMakeParentDotConfigCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestMakeParentDotConfigEdgeMSO(t *testing.T) {
+	atsMajorVer := 7
+	serverName := "myserver"
+	toolName := "myToolName"
+	toURL := "https://myto.example.net"
+
+	parentConfigDSes := []ParentConfigDSTopLevel{
+		ParentConfigDSTopLevel{
+			ParentConfigDS: ParentConfigDS{
+				Name:            "ds0",
+				QStringIgnore:   tc.QStringIgnoreUseInCacheKeyAndPassUp,
+				OriginFQDN:      "http://ds0.example.net",
+				MultiSiteOrigin: true,
+				Type:            tc.DSTypeHTTPLive,
+				QStringHandling: "ds0qstringhandling",
+			},
+		},
+		ParentConfigDSTopLevel{
+			ParentConfigDS: ParentConfigDS{
+				Name:            "ds1",
+				QStringIgnore:   tc.QStringIgnoreDrop,
+				OriginFQDN:      "http://ds1.example.net",
+				MultiSiteOrigin: false,
+				Type:            tc.DSTypeDNS,
+				QStringHandling: "ds1qstringhandling",
+			},
+		},
+	}
+
+	serverInfo := &ServerInfo{
+		CacheGroupID:                  42,
+		CDN:                           "myCDN",
+		CDNID:                         43,
+		DomainName:                    "serverdomain.example.net",
+		HostName:                      "myserver",
+		ID:                            44,
+		IP:                            "192.168.2.1",
+		ParentCacheGroupID:            45,
+		ParentCacheGroupType:          "myParentCGType",
+		ProfileID:                     46,
+		ProfileName:                   "MyProfileName",
+		Port:                          80,
+		SecondaryParentCacheGroupID:   47,
+		SecondaryParentCacheGroupType: "MySecondaryParentCGType",
+		Type:                          "EDGE",
+	}
+
+	serverParams := map[string]string{
+		ParentConfigParamQStringHandling: "myQStringHandlingParam",
+		ParentConfigParamAlgorithm:       tc.AlgorithmConsistentHash,
+		ParentConfigParamQString:         "myQstringParam",
+	}
+
+	parentInfos := map[OriginHost][]ParentInfo{
+		"ds0.example.net": []ParentInfo{
+			ParentInfo{
+				Host:            "my-parent-0",
+				Port:            80,
+				Domain:          "my-parent-0-domain",
+				Weight:          "1",
+				UseIP:           false,
+				Rank:            1,
+				IP:              "192.168.2.2",
+				PrimaryParent:   true,
+				SecondaryParent: true,
+			},
+			ParentInfo{
+				Host:            "my-parent-1",
+				Port:            8042,
+				Domain:          "my-parent-0-domain",
+				Weight:          "1",
+				UseIP:           false,
+				Rank:            1,
+				IP:              "192.168.2.3",
+				PrimaryParent:   true,
+				SecondaryParent: true,
+			},
+		},
+	}
+
+	txt := MakeParentDotConfig(serverInfo, atsMajorVer, toolName, toURL, parentConfigDSes, serverParams, parentInfos)
+
+	testComment(t, txt, serverName, toolName, toURL)
+
+	if !strings.Contains(txt, "dest_domain=ds0.example.net") {
+		t.Errorf("expected non-MSO DS to include origin parent 'dest_domain=ds0.example.net', actual: '%v'", txt)
+	}
+	if !strings.Contains(txt, "dest_domain=ds1.example.net") {
+		t.Errorf("expected non-MSO DS to include origin parent 'dest_domain=ds1.example.net', actual: '%v'", txt)
+	}
+	if !strings.Contains(txt, "my-parent-0.my-parent-0-domain") {
+		t.Errorf("expected MSO Edge DS to include origin servers, actual: '%v'", txt)
+	}
+
+	if !strings.Contains(txt, "my-parent-1.my-parent-0-domain:8042") {
+		t.Errorf("expected MSO Edge DS to include origin servers, actual: '%v'", txt)
+	}
+}
+
+func TestMakeParentDotConfigEdgeMSONotLive(t *testing.T) {
+	atsMajorVer := 7
+	serverName := "myserver"
+	toolName := "myToolName"
+	toURL := "https://myto.example.net"
+
+	parentConfigDSes := []ParentConfigDSTopLevel{
+		ParentConfigDSTopLevel{
+			ParentConfigDS: ParentConfigDS{
+				Name:            "ds0",
+				QStringIgnore:   tc.QStringIgnoreUseInCacheKeyAndPassUp,
+				OriginFQDN:      "http://ds0.example.net",
+				MultiSiteOrigin: true,
+				Type:            tc.DSTypeHTTP,
+				QStringHandling: "ds0qstringhandling",
+			},
+		},
+		ParentConfigDSTopLevel{
+			ParentConfigDS: ParentConfigDS{
+				Name:            "ds1",
+				QStringIgnore:   tc.QStringIgnoreDrop,
+				OriginFQDN:      "http://ds1.example.net",
+				MultiSiteOrigin: false,
+				Type:            tc.DSTypeDNS,
+				QStringHandling: "ds1qstringhandling",
+			},
+		},
+	}
+
+	serverInfo := &ServerInfo{
+		CacheGroupID:                  42,
+		CDN:                           "myCDN",
+		CDNID:                         43,
+		DomainName:                    "serverdomain.example.net",
+		HostName:                      "myserver",
+		ID:                            44,
+		IP:                            "192.168.2.1",
+		ParentCacheGroupID:            45,
+		ParentCacheGroupType:          "myParentCGType",
+		ProfileID:                     46,
+		ProfileName:                   "MyProfileName",
+		Port:                          80,
+		SecondaryParentCacheGroupID:   47,
+		SecondaryParentCacheGroupType: "MySecondaryParentCGType",
+		Type:                          "EDGE",
+	}
+
+	serverParams := map[string]string{
+		ParentConfigParamQStringHandling: "myQStringHandlingParam",
+		ParentConfigParamAlgorithm:       tc.AlgorithmConsistentHash,
+		ParentConfigParamQString:         "myQstringParam",
+	}
+
+	parentInfos := map[OriginHost][]ParentInfo{
+		"ds0.example.net": []ParentInfo{
+			ParentInfo{
+				Host:            "my-parent-0",
+				Port:            80,
+				Domain:          "my-parent-0-domain",
+				Weight:          "1",
+				UseIP:           false,
+				Rank:            1,
+				IP:              "192.168.2.2",
+				PrimaryParent:   true,
+				SecondaryParent: true,
+			},
+			ParentInfo{
+				Host:            "my-parent-1",
+				Port:            8042,
+				Domain:          "my-parent-0-domain",
+				Weight:          "1",
+				UseIP:           false,
+				Rank:            1,
+				IP:              "192.168.2.3",
+				PrimaryParent:   true,
+				SecondaryParent: true,
+			},
+		},
+	}
+
+	txt := MakeParentDotConfig(serverInfo, atsMajorVer, toolName, toURL, parentConfigDSes, serverParams, parentInfos)
+
+	testComment(t, txt, serverName, toolName, toURL)
+
+	if !strings.Contains(txt, "dest_domain=ds0.example.net") {
+		t.Errorf("expected non-MSO DS to include origin parent 'dest_domain=ds0.example.net', actual: '%v'", txt)
+	}
+	if !strings.Contains(txt, "dest_domain=ds1.example.net") {
+		t.Errorf("expected non-MSO DS to include origin parent 'dest_domain=ds1.example.net', actual: '%v'", txt)
+	}
+	if strings.Contains(txt, "my-parent-0.my-parent-0-domain") {
+		t.Errorf("expected MSO Edge DS which is not go-direct to omit origin servers, actual: '%v'", txt)
+	}
+
+	if strings.Contains(txt, "my-parent-1.my-parent-0-domain:8042") {
+		t.Errorf("expected MSO Edge DS which is not go-direct to omit origin servers, actual: '%v'", txt)
+	}
+}

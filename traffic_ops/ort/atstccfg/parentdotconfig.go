@@ -180,7 +180,10 @@ func GetConfigFileServerParentDotConfig(cfg TCCfg, serverNameOrID string) (strin
 		if sv.CDNName != server.CDNName {
 			continue
 		}
-		if _, ok := parentCacheGroups[sv.Cachegroup]; !ok {
+
+		_, isParentCG := parentCacheGroups[sv.Cachegroup]
+		isServerCG := sv.Cachegroup == server.Cachegroup
+		if !isParentCG && !(sv.Type == tc.OriginTypeName && isServerCG) {
 			continue
 		}
 		if sv.Type != tc.OriginTypeName &&

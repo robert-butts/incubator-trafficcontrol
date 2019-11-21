@@ -168,9 +168,6 @@ func MakeParentDotConfig(
 	serverParams map[string]string, // getParentConfigServerProfileParams(serverID)
 	parentInfos map[OriginHost][]ParentInfo, // getParentInfo(profileID, parentCachegroupID, secondaryParentCachegroupID)
 ) string {
-
-	// parentInfos := makeParentInfo(serverInfo)
-
 	nameVersionStr := GetNameVersionStringFromToolNameAndURL(toToolName, toURL)
 	hdr := HeaderCommentWithTOVersionStr(serverInfo.HostName, nameVersionStr)
 
@@ -218,30 +215,11 @@ func MakeParentDotConfig(
 				textLine += "dest_domain=" + orgURI.Hostname() + " port=" + orgURI.Port() + " parent=" + ds.OriginShield + " " + algorithm + " go_direct=true\n"
 			} else if ds.MultiSiteOrigin {
 				textLine += "dest_domain=" + orgURI.Hostname() + " port=" + orgURI.Port() + " "
-				if len(parentInfos) == 0 {
-				}
-
 				if len(parentInfos[OriginHost(orgURI.Hostname())]) == 0 {
 					// TODO error? emulates Perl
 					log.Warnln("ParentInfo: delivery service " + ds.Name + " has no parent servers")
 				}
-
-				parents, secondaryParents := getMSOParentStrs(ds, parentInfos[OriginHost(orgURI.Hostname())], atsMajorVer)
-				textLine += parents + secondaryParents + ` round_robin=` + ds.MSOAlgorithm + ` qstring=` + parentQStr + ` go_direct=false parent_is_proxy=false`
-
-				parentRetry := ds.MSOParentRetry
-				if atsMajorVer >= 6 && parentRetry != "" {
-					if unavailableServerRetryResponsesValid(ds.MSOUnavailableServerRetryResponses) {
-						textLine += ` parent_retry=` + parentRetry + ` unavailable_server_retry_responses=` + ds.MSOUnavailableServerRetryResponses
-					} else {
-						if ds.MSOUnavailableServerRetryResponses != "" {
-							log.Errorln("Malformed unavailable_server_retry_responses parameter '" + ds.MSOUnavailableServerRetryResponses + "', not using!")
-						}
-						textLine += ` parent_retry=` + parentRetry
-					}
-					textLine += ` max_simple_retries=` + ds.MSOMaxSimpleRetries + ` max_unavailable_server_retries=` + ds.MSOMaxUnavailableServerRetries
-				}
-				textLine += "\n" // TODO remove, and join later on "\n" instead of ""?
+				textLine += getMSOParentText(ds, parentInfos[OriginHost(orgURI.Hostname())], parentQStr, atsMajorVer)
 				textArr = append(textArr, textLine)
 			}
 		}
@@ -251,9 +229,6 @@ func MakeParentDotConfig(
 		processedOriginsToDSNames := map[string]tc.DeliveryServiceName{}
 
 		queryStringHandling := serverParams[ParentConfigParamQStringHandling] // "qsh" in Perl
-
-		roundRobin := `round_robin=consistent_hash`
-		goDirect := `go_direct=false`
 
 		sort.Sort(ParentConfigDSTopLevelSortByName(parentConfigDSes))
 
@@ -288,32 +263,36 @@ func MakeParentDotConfig(
 				}
 			}
 
+			// check for profile psel.qstring_handling.  If this parameter is assigned to the server profile,
+			// then edges will use the qstring handling value specified in the parameter for all profiles.
+
+			// If there is no defined parameter in the profile, then check the delivery service profile.
+			// If psel.qstring_handling exists in the DS profile, then we use that value for the specified DS only.
+			// This is used only if not overridden by a server profile qstring handling parameter.
+
+			// TODO refactor this logic, hard to understand (transliterated from Perl)
+			dsQSH := queryStringHandling
+			if dsQSH == "" {
+				dsQSH = ds.QStringHandling
+			}
+			parentQStr := dsQSH
+			if parentQStr == "" {
+				parentQStr = "ignore"
+			}
+			if ds.QStringIgnore == tc.QStringIgnoreUseInCacheKeyAndPassUp && dsQSH == "" {
+				parentQStr = "consider"
+			}
+
+			text += "dest_domain=" + orgURI.Hostname() + " port=" + orgURI.Port()
 			// TODO encode this in a DSType func, IsGoDirect() ?
 			if dsType := tc.DSType(ds.Type); dsType == tc.DSTypeHTTPNoCache || dsType == tc.DSTypeHTTPLive || dsType == tc.DSTypeDNSLive {
-				text += `dest_domain=` + orgURI.Hostname() + ` port=` + orgURI.Port() + ` go_direct=true` + "\n"
+				if ds.MultiSiteOrigin {
+					text += getMSOParentText(ds, parentInfos[OriginHost(orgURI.Hostname())], parentQStr, atsMajorVer)
+				} else {
+					text += ` go_direct=true` + "\n"
+				}
 			} else {
-
-				// check for profile psel.qstring_handling.  If this parameter is assigned to the server profile,
-				// then edges will use the qstring handling value specified in the parameter for all profiles.
-
-				// If there is no defined parameter in the profile, then check the delivery service profile.
-				// If psel.qstring_handling exists in the DS profile, then we use that value for the specified DS only.
-				// This is used only if not overridden by a server profile qstring handling parameter.
-
-				// TODO refactor this logic, hard to understand (transliterated from Perl)
-				dsQSH := queryStringHandling
-				if dsQSH == "" {
-					dsQSH = ds.QStringHandling
-				}
-				parentQStr := dsQSH
-				if parentQStr == "" {
-					parentQStr = "ignore"
-				}
-				if ds.QStringIgnore == tc.QStringIgnoreUseInCacheKeyAndPassUp && dsQSH == "" {
-					parentQStr = "consider"
-				}
-
-				text += `dest_domain=` + orgURI.Hostname() + ` port=` + orgURI.Port() + ` ` + parents + ` ` + secondaryParents + ` ` + roundRobin + ` ` + goDirect + ` qstring=` + parentQStr + "\n"
+				text += ` ` + parents + ` ` + secondaryParents + ` round_robin=consistent_hash go_direct=false qstring=` + parentQStr + "\n"
 			}
 			textArr = append(textArr, text)
 			processedOriginsToDSNames[originFQDN] = ds.Name
@@ -335,6 +314,27 @@ func MakeParentDotConfig(
 		sort.Sort(sort.StringSlice(textArr))
 		text = hdr + strings.Join(textArr, "") + defaultDestText
 	}
+	return text
+}
+
+// getMSOParentStr returns the parents part of the line, for an MSO delivery service.
+// Note this does not return the whole line. It expects a 'dest_domain=' and possibly 'port=' to already exist on the line.
+func getMSOParentText(ds ParentConfigDSTopLevel, parentInfos []ParentInfo, parentQStr string, atsMajorVer int) string {
+	parents, secondaryParents := getMSOParentStrs(ds, parentInfos, atsMajorVer)
+	text := ` ` + parents + secondaryParents + ` round_robin=` + ds.MSOAlgorithm + ` qstring=` + parentQStr + ` go_direct=false parent_is_proxy=false`
+	parentRetry := ds.MSOParentRetry
+	if atsMajorVer >= 6 && parentRetry != "" {
+		if unavailableServerRetryResponsesValid(ds.MSOUnavailableServerRetryResponses) {
+			text += ` parent_retry=` + parentRetry + ` unavailable_server_retry_responses=` + ds.MSOUnavailableServerRetryResponses
+		} else {
+			if ds.MSOUnavailableServerRetryResponses != "" {
+				log.Errorln("Malformed unavailable_server_retry_responses parameter '" + ds.MSOUnavailableServerRetryResponses + "', not using!")
+			}
+			text += ` parent_retry=` + parentRetry
+		}
+		text += ` max_simple_retries=` + ds.MSOMaxSimpleRetries + ` max_unavailable_server_retries=` + ds.MSOMaxUnavailableServerRetries
+	}
+	text += "\n"
 	return text
 }
 

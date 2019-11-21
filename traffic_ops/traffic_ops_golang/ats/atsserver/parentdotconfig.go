@@ -218,15 +218,12 @@ SELECT
 `
 }
 
-const ParentConfigDSQueryFromTopLevel = `
+const ParentConfigDSQueryFrom = `
 FROM
   deliveryservice ds
   JOIN type as dt ON ds.type = dt.id
   JOIN cdn ON cdn.id = ds.cdn_id
 ` // TODO Perl does 'JOIN deliveryservice_regex dsr ON dsr.deliveryservice = ds.id   JOIN regex r ON dsr.regex = r.id   JOIN type as rt ON r.type = rt.id' and orders by, but doesn't use; ensure it isn't necessary
-
-const ParentConfigDSQueryFrom = ParentConfigDSQueryFromTopLevel + `
-`
 
 const ParentConfigDSQueryOrder = `
 ORDER BY ds.id
@@ -252,38 +249,27 @@ func ParentConfigDSQuery() string {
 
 func ParentConfigDSQueryTopLevel() string {
 	return ParentConfigDSQuerySelect() +
-		ParentConfigDSQueryFromTopLevel +
+		ParentConfigDSQueryFrom +
 		ParentConfigDSQueryWhereTopLevel +
 		ParentConfigDSQueryOrder
 }
 
 func getParentConfigDSTopLevel(tx *sql.Tx, cdnName tc.CDNName) ([]atscfg.ParentConfigDSTopLevel, error) {
-	dses, err := getParentConfigDSRaw(tx, ParentConfigDSQueryTopLevel(), []interface{}{cdnName})
-	if err != nil {
-		return nil, errors.New("getting top level raw parent config ds: " + err.Error())
-	}
-	topDSes := []atscfg.ParentConfigDSTopLevel{}
-	for _, ds := range dses {
-		topDSes = append(topDSes, ds)
-	}
-
-	dsesWithParams, err := getParentConfigDSParamsTopLevel(tx, topDSes)
-	if err != nil {
-		return nil, errors.New("getting top level ds params: " + err.Error())
-	}
-
-	return dsesWithParams, nil
+	return getParentConfigDSWithQuery(tx, ParentConfigDSQueryTopLevel(), []interface{}{cdnName})
 }
 
 func getParentConfigDS(tx *sql.Tx, serverID int) ([]atscfg.ParentConfigDSTopLevel, error) {
-	dses, err := getParentConfigDSRaw(tx, ParentConfigDSQuery(), []interface{}{serverID})
-	if err != nil {
-		return nil, errors.New("getting raw parent config ds: " + err.Error())
-	}
+	return getParentConfigDSWithQuery(tx, ParentConfigDSQuery(), []interface{}{serverID})
+}
 
+func getParentConfigDSWithQuery(tx *sql.Tx, qry string, params []interface{}) ([]atscfg.ParentConfigDSTopLevel, error) {
+	dses, err := getParentConfigDSRaw(tx, qry, params)
+	if err != nil {
+		return nil, errors.New("getting parent config ds: " + err.Error())
+	}
 	dsesWithParams, err := getParentConfigDSParams(tx, dses)
 	if err != nil {
-		return nil, errors.New("getting ds params: " + err.Error())
+		return nil, errors.New("getting parent config ds params: " + err.Error())
 	}
 	return dsesWithParams, nil
 }
@@ -383,16 +369,8 @@ FROM
   JOIN profile pr ON pr.id = pp.profile
   JOIN deliveryservice ds on ds.profile = pr.id
 `
-const ParentConfigDSParamsQueryWhere = `
-WHERE
-  pa.config_file = 'parent.config'
-  AND ds.xml_id = ANY($1)
-  AND pa.name IN (
-    '` + atscfg.ParentConfigParamQStringHandling + `'
-  )
-`
 
-var ParentConfigDSParamsQueryWhereTopLevel = `
+var ParentConfigDSParamsQueryWhere = `
 WHERE
   pa.config_file = 'parent.config'
   AND ds.xml_id = ANY($1)
@@ -406,30 +384,10 @@ WHERE
   )
 `
 
-const ParentConfigDSParamsQuery = ParentConfigDSParamsQuerySelect + ParentConfigDSParamsQueryFrom + ParentConfigDSParamsQueryWhere
-
-var ParentConfigDSParamsQueryTopLevel = ParentConfigDSParamsQuerySelect + ParentConfigDSParamsQueryFrom + ParentConfigDSParamsQueryWhereTopLevel
+var ParentConfigDSParamsQuery = ParentConfigDSParamsQuerySelect + ParentConfigDSParamsQueryFrom + ParentConfigDSParamsQueryWhere
 
 func getParentConfigDSParams(tx *sql.Tx, dses []atscfg.ParentConfigDSTopLevel) ([]atscfg.ParentConfigDSTopLevel, error) {
 	params, err := getParentConfigDSParamsRaw(tx, ParentConfigDSParamsQuery, parentConfigDSesToNamesTopLevel(dses))
-	if err != nil {
-		return nil, err
-	}
-	for i, ds := range dses {
-		dsParams, ok := params[ds.Name]
-		if !ok {
-			continue
-		}
-		if v, ok := dsParams[atscfg.ParentConfigParamQStringHandling]; ok {
-			ds.QStringHandling = v
-			dses[i] = ds
-		}
-	}
-	return dses, nil
-}
-
-func getParentConfigDSParamsTopLevel(tx *sql.Tx, dses []atscfg.ParentConfigDSTopLevel) ([]atscfg.ParentConfigDSTopLevel, error) {
-	params, err := getParentConfigDSParamsRaw(tx, ParentConfigDSParamsQueryTopLevel, parentConfigDSesToNamesTopLevel(dses))
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +488,7 @@ WITH parent_cachegroup_ids AS (
 	} else {
 		qry = `
 WITH server_cachegroup_ids AS (
-  SELECT cachegroup as v FROM server WHERE id = $2
+  SELECT cachegroup as v FROM server WHERE id = $3
 ),
 parent_cachegroup_ids AS (
   SELECT parent_cachegroup_id as v
@@ -563,8 +521,12 @@ FROM
   JOIN cdn on s.cdn_id = cdn.id
   JOIN status st ON st.id = s.status
 WHERE
-  cg.id IN (SELECT v FROM parent_cachegroup_ids)
-  AND (stype.name = '` + tc.OriginTypeName + `' OR stype.name LIKE '` + tc.EdgeTypePrefix + `%' OR stype.name LIKE '` + tc.MidTypePrefix + `%')
+  (
+    cg.id IN (SELECT v FROM parent_cachegroup_ids)
+    AND (stype.name = '` + tc.OriginTypeName + `' OR stype.name LIKE '` + tc.EdgeTypePrefix + `%' OR stype.name LIKE '` + tc.MidTypePrefix + `%')
+  ) OR (
+    cg.id = $2 AND stype.name = '` + tc.OriginTypeName + `'
+  )
   AND (st.name = '` + string(tc.CacheStatusReported) + `' OR st.name = '` + string(tc.CacheStatusOnline) + `')
   AND cdn.name = $1
 `
@@ -572,9 +534,9 @@ WHERE
 	// TODO move qry, qryParams to separate funcs/consts
 	qryParams := []interface{}{}
 	if server.IsTopLevelCache() {
-		qryParams = []interface{}{server.CDN}
+		qryParams = []interface{}{server.CDN, server.CacheGroupID}
 	} else {
-		qryParams = []interface{}{server.CDN, server.ID}
+		qryParams = []interface{}{server.CDN, server.CacheGroupID, server.ID}
 	}
 
 	rows, err := tx.Query(qry, qryParams...)
