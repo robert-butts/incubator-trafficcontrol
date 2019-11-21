@@ -868,6 +868,9 @@ A Delivery Service Profile_ can have :term:`Parameters` that affect Multi-Site O
 .. _unavailable_server_retry_responses: https://docs.trafficserver.apache.org/en/7.1.x/admin-guide/files/parent.config.en.html#parent-config-format-unavailable-server-retry-responses
 .. _parent.config: https://docs.trafficserver.apache.org/en/7.1.x/admin-guide/files/parent.config.en.html
 
+
+For Delivery Services which use Mid Servers, the Origin Servers' Cachegroup must be the Parent of the Mid's Cachegroup. For Delivery Services which go directly from the Edge to the Origin (HTTP_NO_CACHE, HTTP_LIVE, and DNS_LIVE) the Origin Servers' Cachegroup must be the same as the Edge's Cachegroup.
+
 .. _ds-mso-parameters:
 
 .. table:: :term:`Parameters` of a Delivery Service Profile_ that Affect :abbr:`MSO (Multi-Site-Origin)` Configuration
