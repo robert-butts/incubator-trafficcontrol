@@ -53,7 +53,7 @@ func DSPostHandler(w http.ResponseWriter, r *http.Request) {
 		"alerts": tc.CreateAlerts(tc.SuccessLevel, "Delivery services successfully assigned to all the servers of cache group "+strconv.Itoa(inf.IntParams["id"])+".").Alerts,
 	}
 
-	resp, userErr, sysErr, errCode := postDSes(inf.Tx.Tx, inf.User, int64(inf.IntParams["id"]), req.DeliveryServices)
+	resp, userErr, sysErr, errCode := postDSes(inf.Tx.Tx, r, inf.User, int64(inf.IntParams["id"]), req.DeliveryServices)
 	if userErr != nil || sysErr != nil {
 		api.HandleErr(w, r, inf.Tx.Tx, errCode, userErr, sysErr)
 		return
@@ -62,7 +62,7 @@ func DSPostHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // postDSes returns the post response, any user error, any system error, and the HTTP status code to be returned in the event of an error.
-func postDSes(tx *sql.Tx, user *auth.CurrentUser, cgID int64, dsIDs []int64) (tc.CacheGroupPostDSResp, error, error, int) {
+func postDSes(tx *sql.Tx, req *http.Request, user *auth.CurrentUser, cgID int64, dsIDs []int64) (tc.CacheGroupPostDSResp, error, error, int) {
 	cdnName, usrErr, sysErr, errCode := getCachegroupCDN(tx, cgID)
 	if sysErr != nil {
 		sysErr = errors.New("getting cachegroup CDN: " + sysErr.Error())
@@ -106,7 +106,7 @@ func postDSes(tx *sql.Tx, user *auth.CurrentUser, cgID int64, dsIDs []int64) (tc
 	if err := updateParams(tx, dsIDs); err != nil {
 		return tc.CacheGroupPostDSResp{}, nil, errors.New("updating delivery service parameters: " + err.Error()), http.StatusInternalServerError
 	}
-	api.CreateChangeLogRawTx(api.ApiChange, "CACHEGROUP: "+string(cgName)+", ID: "+strconv.FormatInt(cgID, 10)+", ACTION: Assign DSes to CacheGroup servers", user, tx)
+	api.CreateChangeLogRawTx(api.ApiChange, "CACHEGROUP: "+string(cgName)+", ID: "+strconv.FormatInt(cgID, 10)+", ACTION: Assign DSes to CacheGroup servers", user, tx, req)
 	return tc.CacheGroupPostDSResp{ID: util.JSONIntStr(cgID), ServerNames: cgServers, DeliveryServices: dsIDs}, nil, nil, http.StatusOK
 }
 

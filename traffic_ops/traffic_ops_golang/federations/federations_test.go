@@ -20,6 +20,7 @@ package federations
  */
 
 import "database/sql"
+import "context"
 import "io/ioutil"
 import "net/http"
 import "strings"
@@ -97,7 +98,12 @@ func positiveTestAddFederationResolverMappingsForCurrentUser(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when beginning a mock transaction", err)
 	}
 
-	userErr, sysErr, errCode := addFederationResolverMappingsForCurrentUser(&u, tx, mappings)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://to.invalid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userErr, sysErr, errCode := addFederationResolverMappingsForCurrentUser(&u, tx, req, mappings)
 	if userErr != nil {
 		t.Errorf("Unexpected user error: %v", userErr)
 	}
@@ -150,7 +156,12 @@ func testAddFederationResolverMappingsForCurrentUserWithoutFederations(t *testin
 		t.Fatalf("an error '%s' was not expected when beginning a mock transaction", err)
 	}
 
-	userErr, sysErr, errCode := addFederationResolverMappingsForCurrentUser(&u, tx, mappings)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://to.invalid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userErr, sysErr, errCode := addFederationResolverMappingsForCurrentUser(&u, tx, req, mappings)
 	if userErr == nil {
 		t.Errorf("Unexpected a user error, but didn't get one")
 	} else {
@@ -204,7 +215,12 @@ func testUnauthorizedDSOnResolverAdd(t *testing.T) {
 		t.Fatalf("an error '%s' was not expected when beginning a mock transaction", err)
 	}
 
-	userErr, sysErr, errCode := addFederationResolverMappingsForCurrentUser(&u, tx, mappings)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://to.invalid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userErr, sysErr, errCode := addFederationResolverMappingsForCurrentUser(&u, tx, req, mappings)
 	if userErr == nil {
 		t.Errorf("Unexpected a user error, but didn't get one")
 	} else {

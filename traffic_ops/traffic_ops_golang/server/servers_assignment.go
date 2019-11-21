@@ -121,7 +121,7 @@ func AssignDeliveryServicesToServerHandler(w http.ResponseWriter, r *http.Reques
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusNotFound, errors.New("no server with that ID found"), nil)
 	}
 
-	api.CreateChangeLogRawTx(api.ApiChange, "SERVER: "+serverInfo.HostName+", ID: "+strconv.Itoa(server)+", ACTION: Assigned "+strconv.Itoa(len(assignedDSes))+" DSes to server", inf.User, inf.Tx.Tx)
+	api.CreateChangeLogRawTx(api.ApiChange, "SERVER: "+serverInfo.HostName+", ID: "+strconv.Itoa(server)+", ACTION: Assigned "+strconv.Itoa(len(assignedDSes))+" DSes to server", inf.User, inf.Tx.Tx, r)
 	api.WriteRespAlertObj(w, r, tc.SuccessLevel, "successfully assigned dses to server", tc.AssignedDsResponse{server, assignedDSes, replace})
 }
 

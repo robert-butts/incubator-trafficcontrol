@@ -135,7 +135,7 @@ func RemoveDeliveryServiceURIKeysHandler(w http.ResponseWriter, r *http.Request)
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("deleting riak object: "+err.Error()))
 		return
 	}
-	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+xmlID+", ID: "+strconv.Itoa(dsID)+", ACTION: Removed URI signing keys", inf.User, inf.Tx.Tx)
+	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+xmlID+", ID: "+strconv.Itoa(dsID)+", ACTION: Removed URI signing keys", inf.User, inf.Tx.Tx, r)
 	api.WriteRespAlert(w, r, tc.SuccessLevel, "object deleted")
 	return
 }
@@ -201,7 +201,7 @@ func SaveDeliveryServiceURIKeysHandler(w http.ResponseWriter, r *http.Request) {
 		api.HandleErr(w, r, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("saving riak object: "+err.Error()))
 		return
 	}
-	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+xmlID+", ID: "+strconv.Itoa(dsID)+", ACTION: Stored URI signing keys to a delivery service", inf.User, inf.Tx.Tx)
+	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+xmlID+", ID: "+strconv.Itoa(dsID)+", ACTION: Stored URI signing keys to a delivery service", inf.User, inf.Tx.Tx, r)
 	w.Header().Set("Content-Type", tc.ApplicationJson)
 	w.Write(data)
 }

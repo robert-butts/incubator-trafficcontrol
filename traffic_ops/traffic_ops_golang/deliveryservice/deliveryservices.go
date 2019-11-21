@@ -299,7 +299,7 @@ func createV14(w http.ResponseWriter, r *http.Request, inf *api.APIInfo, reqDS t
 		usrErr, sysErr, code := api.ParseDBError(err)
 		return nil, code, usrErr, sysErr
 	} else {
-		api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created "+strconv.Itoa(c)+" consistent hash query params", user, tx)
+		api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created "+strconv.Itoa(c)+" consistent hash query params", user, tx, r)
 	}
 
 	matchlists, err := GetDeliveryServicesMatchLists([]string{*ds.XMLID}, tx)
@@ -329,12 +329,12 @@ func createV14(w http.ResponseWriter, r *http.Request, inf *api.APIInfo, reqDS t
 		}
 	}
 
-	if err := createPrimaryOrigin(tx, user, ds); err != nil {
+	if err := createPrimaryOrigin(tx, r, user, ds); err != nil {
 		return nil, http.StatusInternalServerError, nil, errors.New("creating delivery service: " + err.Error())
 	}
 
 	ds.LastUpdated = &lastUpdated
-	if err := api.CreateChangeLogRawErr(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created delivery service", user, tx); err != nil {
+	if err := api.CreateChangeLogRawErr(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created delivery service", user, tx, r); err != nil {
 		return nil, http.StatusInternalServerError, nil, errors.New("error writing to audit log: " + err.Error())
 	}
 
@@ -723,7 +723,7 @@ func updateV14(w http.ResponseWriter, r *http.Request, inf *api.APIInfo, reqDS *
 		return nil, http.StatusInternalServerError, nil, errors.New("ensuring ds parameters:: " + err.Error())
 	}
 
-	if err := updatePrimaryOrigin(tx, user, *ds); err != nil {
+	if err := updatePrimaryOrigin(tx, r, user, *ds); err != nil {
 		return nil, http.StatusInternalServerError, nil, errors.New("updating delivery service: " + err.Error())
 	}
 
@@ -734,17 +734,17 @@ func updateV14(w http.ResponseWriter, r *http.Request, inf *api.APIInfo, reqDS *
 	if res, err := tx.Exec(q, *ds.ID); err != nil {
 		return nil, http.StatusInternalServerError, nil, fmt.Errorf("deleting consistent hash query params for ds %s: %s", *ds.XMLID, err.Error())
 	} else if c, _ := res.RowsAffected(); c > 0 {
-		api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Deleted "+strconv.FormatInt(c, 10)+" consistent hash query params", user, tx)
+		api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Deleted "+strconv.FormatInt(c, 10)+" consistent hash query params", user, tx, r)
 	}
 
 	if c, err := createConsistentHashQueryParams(tx, *ds.ID, ds.ConsistentHashQueryParams); err != nil {
 		usrErr, sysErr, code := api.ParseDBError(err)
 		return nil, code, usrErr, sysErr
 	} else {
-		api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created "+strconv.Itoa(c)+" consistent hash query params", user, tx)
+		api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created "+strconv.Itoa(c)+" consistent hash query params", user, tx, r)
 	}
 
-	if err := api.CreateChangeLogRawErr(api.ApiChange, "Updated ds: "+*ds.XMLID+" id: "+strconv.Itoa(*ds.ID), user, tx); err != nil {
+	if err := api.CreateChangeLogRawErr(api.ApiChange, "Updated ds: "+*ds.XMLID+" id: "+strconv.Itoa(*ds.ID), user, tx, r); err != nil {
 		return nil, http.StatusInternalServerError, nil, errors.New("writing change log entry: " + err.Error())
 	}
 	dsLatest := tc.DeliveryServiceNullableV14(*ds)
@@ -885,7 +885,7 @@ func getTypeFromID(id int, tx *sql.Tx) (tc.DSType, error) {
 	return tc.DSTypeFromString(name), nil
 }
 
-func updatePrimaryOrigin(tx *sql.Tx, user *auth.CurrentUser, ds tc.DeliveryServiceNullable) error {
+func updatePrimaryOrigin(tx *sql.Tx, req *http.Request, user *auth.CurrentUser, ds tc.DeliveryServiceNullable) error {
 	count := 0
 	q := `SELECT count(*) FROM origin WHERE deliveryservice = $1 AND is_primary`
 	if err := tx.QueryRow(q, *ds.ID).Scan(&count); err != nil {
@@ -899,14 +899,14 @@ func updatePrimaryOrigin(tx *sql.Tx, user *auth.CurrentUser, ds tc.DeliveryServi
 			if _, err := tx.Exec(q, *ds.ID); err != nil {
 				return fmt.Errorf("deleting primary origin for ds %s: %s", *ds.XMLID, err.Error())
 			}
-			api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Deleted primary origin", user, tx)
+			api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Deleted primary origin", user, tx, req)
 		}
 		return nil
 	}
 
 	if count == 0 {
 		// orgServerFQDN is going from null to not null, so the primary origin needs to be created
-		return createPrimaryOrigin(tx, user, ds)
+		return createPrimaryOrigin(tx, req, user, ds)
 	}
 
 	protocol, fqdn, port, err := tc.ParseOrgServerFQDN(*ds.OrgServerFQDN)
@@ -920,12 +920,12 @@ func updatePrimaryOrigin(tx *sql.Tx, user *auth.CurrentUser, ds tc.DeliveryServi
 		return fmt.Errorf("update primary origin for ds %s from '%s': %s", *ds.XMLID, *ds.OrgServerFQDN, err.Error())
 	}
 
-	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Updated primary origin: "+name, user, tx)
+	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Updated primary origin: "+name, user, tx, req)
 
 	return nil
 }
 
-func createPrimaryOrigin(tx *sql.Tx, user *auth.CurrentUser, ds tc.DeliveryServiceNullable) error {
+func createPrimaryOrigin(tx *sql.Tx, req *http.Request, user *auth.CurrentUser, ds tc.DeliveryServiceNullable) error {
 	if ds.OrgServerFQDN == nil {
 		return nil
 	}
@@ -941,7 +941,7 @@ func createPrimaryOrigin(tx *sql.Tx, user *auth.CurrentUser, ds tc.DeliveryServi
 		return fmt.Errorf("insert origin from '%s': %s", *ds.OrgServerFQDN, err.Error())
 	}
 
-	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created primary origin id: "+strconv.Itoa(originID), user, tx)
+	api.CreateChangeLogRawTx(api.ApiChange, "DS: "+*ds.XMLID+", ID: "+strconv.Itoa(*ds.ID)+", ACTION: Created primary origin id: "+strconv.Itoa(originID), user, tx, req)
 
 	return nil
 }

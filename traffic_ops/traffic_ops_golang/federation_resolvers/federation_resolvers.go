@@ -77,7 +77,7 @@ func Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	changeLogMsg := fmt.Sprintf("FEDERATION_RESOLVER: %s, ID: %d, ACTION: Created", *fr.IPAddress, *fr.ID)
-	api.CreateChangeLogRawTx(api.ApiChange, changeLogMsg, inf.User, tx)
+	api.CreateChangeLogRawTx(api.ApiChange, changeLogMsg, inf.User, tx, r)
 
 	alertMsg := fmt.Sprintf("Federation Resolver created [ IP = %s ] with id: %d", *fr.IPAddress, *fr.ID)
 	api.WriteRespAlertObj(w, r, tc.SuccessLevel, alertMsg, fr)

@@ -20,16 +20,23 @@ package api
  */
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 
-	"github.com/lib/pq"
-
 	"github.com/apache/trafficcontrol/lib/go-tc"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/auth"
+	"github.com/apache/trafficcontrol/traffic_ops/traffic_ops_golang/config"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
+	"gopkg.in/DATA-DOG/go-sqlmock.v1"
 )
 
 func TestCamelCase(t *testing.T) {
@@ -203,3 +210,145 @@ func TestParseRestrictFKConstraint(t *testing.T) {
 		})
 	}
 }
+
+func TestChangeLogWritten(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "http://foo.invalid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ChangeLogWritten(req) {
+		t.Fatalf("expected new request ChangeLogWritten false, actual true")
+	}
+	SetChangeLogWritten(req)
+	if !ChangeLogWritten(req) {
+		t.Fatalf("expected request after SetChangeLogWritten to be ChangeLogWritten true, actual false")
+	}
+}
+
+func TestCloseWithoutChangeLog(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+	}
+	defer mockDB.Close()
+
+	db := sqlx.NewDb(mockDB, "sqlmock")
+	defer db.Close()
+	i := testIdentifier{}
+
+	keys, _ := i.GetKeys()
+	expectedMessage := strings.ToUpper(i.GetType()) + ": " + i.GetAuditName() + ", ID: " + strconv.Itoa(keys["id"].(int)) + ", ACTION: " + Created + " " + i.GetType() + ", keys: { id:" + strconv.Itoa(keys["id"].(int)) + " }"
+
+	mock.ExpectBegin()
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT").WithArgs(ApiChange, expectedMessage, 1).WillReturnResult(sqlmock.NewResult(1, 1))
+	// user := auth.CurrentUser{ID: 1}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://to.invalid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.DBQueryTimeoutSeconds = 99
+	ctx := req.Context()
+	ctx = context.WithValue(ctx, DBContextKey, db)
+	ctx = context.WithValue(ctx, ConfigContextKey, cfg)
+	ctx = context.WithValue(ctx, ReqIDContextKey, uint64(42))
+	ctx = context.WithValue(ctx, PathParamsKey, map[string]string{})
+	req = req.WithContext(ctx)
+
+	AddUserToReq(req, auth.CurrentUser{
+		UserName:     "bill",
+		ID:           42,
+		PrivLevel:    0,
+		TenantID:     0,
+		Role:         0,
+		Capabilities: pq.StringArray([]string{}),
+	})
+
+	req.Method = http.MethodGet
+	inf, userErr, sysErr, errCode := NewInfo(req, nil, nil)
+	if userErr != nil || sysErr != nil {
+		t.Fatalf("NewInfo userErr '%v' sysErr '%v' code %v", userErr, sysErr, errCode)
+	}
+	if ChangeLogWritten(req) {
+		t.Fatalf("expected new request ChangeLogWritten false, actual true")
+	}
+	inf.Close()
+	if ChangeLogWritten(req) {
+		t.Fatalf("expected safe request after Close() to be ChangeLogWritten false, actual true")
+	}
+
+	req.Method = http.MethodPost
+	inf, userErr, sysErr, errCode = NewInfo(req, nil, nil)
+	if userErr != nil || sysErr != nil {
+		t.Fatalf("NewInfo userErr '%v' sysErr '%v' code %v", userErr, sysErr, errCode)
+	}
+	if ChangeLogWritten(req) {
+		t.Fatalf("expected new request ChangeLogWritten false, actual true")
+	}
+	inf.Close()
+	if !ChangeLogWritten(req) {
+		t.Fatalf("expected unsafe request after Close() to be ChangeLogWritten true, actual false")
+	}
+}
+
+func TestCloseOnErrorWithoutChangelog(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+	}
+	defer mockDB.Close()
+
+	db := sqlx.NewDb(mockDB, "sqlmock")
+	defer db.Close()
+
+	mock.ExpectBegin()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://to.invalid", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	cfg.DBQueryTimeoutSeconds = 99
+	ctx := req.Context()
+	ctx = context.WithValue(ctx, DBContextKey, db)
+	ctx = context.WithValue(ctx, ConfigContextKey, cfg)
+	ctx = context.WithValue(ctx, ReqIDContextKey, uint64(42))
+	ctx = context.WithValue(ctx, PathParamsKey, map[string]string{})
+	req = req.WithContext(ctx)
+
+	AddUserToReq(req, auth.CurrentUser{
+		UserName:     "bill",
+		ID:           42,
+		PrivLevel:    0,
+		TenantID:     0,
+		Role:         0,
+		Capabilities: pq.StringArray([]string{}),
+	})
+
+	req.Method = http.MethodPost
+	inf, userErr, sysErr, errCode := NewInfo(req, nil, nil)
+	if userErr != nil || sysErr != nil {
+		t.Fatalf("NewInfo userErr '%v' sysErr '%v' code %v", userErr, sysErr, errCode)
+	}
+	if ChangeLogWritten(req) {
+		t.Fatalf("expected new request ChangeLogWritten false, actual true")
+	}
+
+	w := MockResponseWriter{}
+
+	HandleErr(w, req, inf.Tx.Tx, http.StatusInternalServerError, nil, errors.New("something went wrong"))
+	inf.Close()
+	if !ChangeLogWritten(req) {
+		t.Fatalf("expected request after HandleErr then Close() to be ChangeLogWritten true, actual false")
+	}
+}
+
+type MockResponseWriter struct{}
+
+func (m MockResponseWriter) Header() http.Header        { return http.Header{} }
+func (m MockResponseWriter) Write([]byte) (int, error)  { return 0, nil }
+func (m MockResponseWriter) WriteHeader(statusCode int) {}

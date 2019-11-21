@@ -20,6 +20,7 @@ package api
  */
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -72,8 +73,15 @@ func TestCreateChangeLog(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT").WithArgs(ApiChange, expectedMessage, 1).WillReturnResult(sqlmock.NewResult(1, 1))
 	user := auth.CurrentUser{ID: 1}
-	err = CreateChangeLog(ApiChange, Created, &i, &user, db.MustBegin().Tx)
+	req, err := http.NewRequest(http.MethodGet, "http://to.invalid", nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	err = CreateChangeLog(ApiChange, Created, &i, &user, db.MustBegin().Tx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ChangeLogWritten(req) {
+		t.Fatalf("expected request after SetChangeLogWritten to be ChangeLogWritten true, actual false")
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/apache/trafficcontrol/lib/go-log"
@@ -50,22 +51,22 @@ const (
 	Deleted   = "Deleted"
 )
 
-func CreateChangeLog(level string, action string, i Identifier, user *auth.CurrentUser, tx *sql.Tx) error {
+func CreateChangeLog(level string, action string, i Identifier, user *auth.CurrentUser, tx *sql.Tx, req *http.Request) error {
 	t, ok := i.(ChangeLogger)
 	if !ok {
 		keys, _ := i.GetKeys()
-		return CreateChangeLogBuildMsg(level, action, user, tx, i.GetType(), i.GetAuditName(), keys)
+		return CreateChangeLogBuildMsg(level, action, user, tx, req, i.GetType(), i.GetAuditName(), keys)
 	}
 	msg, err := t.ChangeLogMessage(action)
 	if err != nil {
 		log.Errorf("%++v creating log message for %++v", err, t)
 		keys, _ := i.GetKeys()
-		return CreateChangeLogBuildMsg(level, action, user, tx, i.GetType(), i.GetAuditName(), keys)
+		return CreateChangeLogBuildMsg(level, action, user, tx, req, i.GetType(), i.GetAuditName(), keys)
 	}
-	return CreateChangeLogRawErr(level, msg, user, tx)
+	return CreateChangeLogRawErr(level, msg, user, tx, req)
 }
 
-func CreateChangeLogBuildMsg(level string, action string, user *auth.CurrentUser, tx *sql.Tx, objType string, auditName string, keys map[string]interface{}) error {
+func CreateChangeLogBuildMsg(level string, action string, user *auth.CurrentUser, tx *sql.Tx, req *http.Request, objType string, auditName string, keys map[string]interface{}) error {
 	keyStr := "{ "
 	for key, value := range keys {
 		keyStr += key + ":" + fmt.Sprintf("%v", value) + " "
@@ -76,18 +77,20 @@ func CreateChangeLogBuildMsg(level string, action string, user *auth.CurrentUser
 		id = "N/A"
 	}
 	msg := fmt.Sprintf("%v: %v, ID: %v, ACTION: %v %v, keys: %v", strings.ToTitle(objType), auditName, id, strings.Title(action), objType, keyStr)
-	return CreateChangeLogRawErr(level, msg, user, tx)
+	return CreateChangeLogRawErr(level, msg, user, tx, req)
 }
 
-func CreateChangeLogRawErr(level string, msg string, user *auth.CurrentUser, tx *sql.Tx) error {
+func CreateChangeLogRawErr(level string, msg string, user *auth.CurrentUser, tx *sql.Tx, req *http.Request) error {
 	if _, err := tx.Exec(`INSERT INTO log (level, message, tm_user) VALUES ($1, $2, $3)`, level, msg, user.ID); err != nil {
 		return errors.New("Inserting change log level '" + level + "' message '" + msg + "' user '" + user.UserName + "': " + err.Error())
 	}
+	SetChangeLogWritten(req)
 	return nil
 }
 
-func CreateChangeLogRawTx(level string, msg string, user *auth.CurrentUser, tx *sql.Tx) {
+func CreateChangeLogRawTx(level string, msg string, user *auth.CurrentUser, tx *sql.Tx, req *http.Request) {
 	if _, err := tx.Exec(`INSERT INTO log (level, message, tm_user) VALUES ($1, $2, $3)`, level, msg, user.ID); err != nil {
 		log.Errorln("Inserting change log level '" + level + "' message '" + msg + "' user '" + user.UserName + "': " + err.Error())
 	}
+	SetChangeLogWritten(req)
 }

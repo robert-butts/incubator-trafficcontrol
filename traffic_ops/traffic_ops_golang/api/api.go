@@ -49,6 +49,7 @@ const DBContextKey = "db"
 const ConfigContextKey = "context"
 const ReqIDContextKey = "reqid"
 const APIRespWrittenKey = "respwritten"
+const APIChangeLogWrittenKey = "changelogwritten"
 
 const influxServersQuery = `
 SELECT (host_name||'.'||domain_name) as fqdn,
@@ -115,6 +116,7 @@ func WriteRespVals(w http.ResponseWriter, r *http.Request, v interface{}, vals m
 //
 // This is a helper for the common case; not using this in unusual cases is perfectly acceptable.
 func HandleErr(w http.ResponseWriter, r *http.Request, tx *sql.Tx, statusCode int, userErr error, sysErr error) {
+	SetChangeLogWritten(r) // set the changelog written (even though it wasn't) so the safety in ApiInfo.Close() doesn't write it.
 	if respWritten(r) {
 		log.Errorf("HandleErr called after a write already occurred! Attempting to write the error anyway! Path %s", r.URL.Path)
 		// Don't return, attempt to rollback and write the error anyway
@@ -304,6 +306,8 @@ type APIInfo struct {
 	Version   *Version
 	Tx        *sqlx.Tx
 	Config    *config.Config
+
+	req *http.Request
 }
 
 // Creates a deprecation warning for an endpoint, with a proposed alternative.
@@ -379,6 +383,7 @@ func NewInfo(r *http.Request, requiredParams []string, intParamNames []string) (
 		IntParams: intParams,
 		User:      user,
 		Tx:        tx,
+		req:       r,
 	}, nil, nil, http.StatusOK
 }
 
@@ -386,6 +391,13 @@ func NewInfo(r *http.Request, requiredParams []string, intParamNames []string) (
 //
 // Close will commit the transaction, if it hasn't been rolled back.
 func (inf *APIInfo) Close() {
+	if !rfc.MethodSafe(inf.req.Method) && !ChangeLogWritten(inf.req) {
+		// Note if there exists an endpoint which is an unsafe method, but known not to modify state (for example, doing a POST to send data, but not actually changing anything), this should be avoided by calling SetChangeLogWritten (even though it wasn't, because it doesn't need to be).
+		log.Errorln("Request for unsafe " + inf.req.Method + " " + inf.req.URL.String() + "' did not write a changelog! Please file a bug report with Traffic Control. Writing a degraded changelog!")
+
+		CreateChangeLogRawTx(ApiChange, "ERROR endpoint "+inf.req.Method+" "+inf.req.URL.String()+" succeeded, but didn't write its own changelog! Please file a bug with Traffic Control to create a proper changelog for this endpoint!", inf.User, inf.Tx.Tx, inf.req)
+	}
+
 	if err := inf.Tx.Tx.Commit(); err != nil && err != sql.ErrTxDone {
 		log.Errorln("committing transaction: " + err.Error())
 	}
@@ -579,6 +591,15 @@ func setRespWritten(r *http.Request) {
 // This is used to prevent double-write errors. See setRespWritten.
 func respWritten(r *http.Request) bool {
 	return r.Context().Value(APIRespWrittenKey) != nil
+}
+
+// SetChangeLogWritten adds that the changelog was written to the request context.
+func SetChangeLogWritten(req *http.Request) {
+	*req = *req.WithContext(context.WithValue(req.Context(), APIChangeLogWrittenKey, struct{}{}))
+}
+
+func ChangeLogWritten(r *http.Request) bool {
+	return r.Context().Value(APIChangeLogWrittenKey) != nil
 }
 
 // small helper function to help with parsing below

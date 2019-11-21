@@ -81,7 +81,7 @@ func CreateUpdateServercheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	successMsg := "Server Check was successfully updated"
-	api.CreateChangeLogRawTx(api.ApiChange, successMsg, inf.User, inf.Tx.Tx)
+	api.CreateChangeLogRawTx(api.ApiChange, successMsg, inf.User, inf.Tx.Tx, r)
 	api.WriteRespAlert(w, r, tc.SuccessLevel, successMsg)
 }
 

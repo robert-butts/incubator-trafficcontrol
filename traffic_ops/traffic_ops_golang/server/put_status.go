@@ -101,7 +101,7 @@ func UpdateStatusHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		msg += " and queued updates on all child caches"
 	}
-	api.CreateChangeLogRawTx(api.ApiChange, msg, inf.User, inf.Tx.Tx)
+	api.CreateChangeLogRawTx(api.ApiChange, msg, inf.User, inf.Tx.Tx, r)
 	api.WriteRespAlert(w, r, tc.SuccessLevel, msg)
 }
 

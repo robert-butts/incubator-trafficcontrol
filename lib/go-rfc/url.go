@@ -19,10 +19,13 @@ package rfc
  * under the License.
  */
 
-import "encoding/json"
-import "fmt"
-import "net/url"
-import "strconv"
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+)
 
 // URL is an alias of net/url.URL that implements JSON encoding and decoding, as well as scanning
 // from database driver values.
@@ -74,4 +77,10 @@ func (u *URL) Scan(src interface{}) error {
 	default:
 		return fmt.Errorf("Type %T cannot represent a URL!", src)
 	}
+}
+
+// MethodSafe returns whether the given method is 'safe', as defined by RFC7231§4.2.1.
+// If the given method is unknown, this returns false.
+func MethodSafe(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }
