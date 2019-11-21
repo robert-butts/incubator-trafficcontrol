@@ -1104,6 +1104,7 @@ sub parent_ds_data {
 			$response_obj->{dslist}->[$j]->{"org"}                         = $org_fqdn;
 			$response_obj->{dslist}->[$j]->{"type"}                        = $ds_type;
 			$response_obj->{dslist}->[$j]->{"qstring_ignore"}              = $qstring_ignore;
+			$response_obj->{dslist}->[$j]->{"multi_site_origin"}           = $multi_site_origin;
 
 			if ( defined( $dsinfo->profile ) ) {
 				my $dsqstring = $self->db->resultset('ProfileParameter')
@@ -2341,6 +2342,7 @@ sub by_parent_rank {
 
 sub cachegroup_profiles {
 	my $self             = shift;
+	my $cachegroup_id    = shift;
 	my $ids              = shift;
 	my $profile_cache    = shift;
 	my $deliveryservices = shift;
@@ -2351,15 +2353,22 @@ sub cachegroup_profiles {
 	my $online   = &admin_status_id( $self, "ONLINE" );
 	my $reported = &admin_status_id( $self, "REPORTED" );
 
+	my $org_type_id = &type_id( $self, 'ORG' );
+
 	my %condition = (
-		status     => { -in => [ $online, $reported ] },
-		cachegroup => { -in => $ids }
+		status => { -in => [ $online, $reported ] },
+		-or => [
+			-and => [
+				"me.cachegroup" => $cachegroup_id,
+				"me.type" => $org_type_id
+			],
+			"me.cachegroup" => { -in => $ids }
+		]
 	);
 
 	my $rs_parent = $self->db->resultset('Server')->search( \%condition, { prefetch => [ 'cachegroup', 'status', 'type', 'profile', 'cdn' ] } );
 
 	while ( my $row = $rs_parent->next ) {
-
 		next unless ( $row->type->name eq 'ORG' || $row->type->name =~ m/^EDGE/ || $row->type->name =~ m/^MID/ );
 		if ( $row->type->name eq 'ORG' ) {
 			my $rs_ds = $self->db->resultset('DeliveryserviceServer')->search( { server => $row->id }, { prefetch => ['deliveryservice'] } );
@@ -2397,7 +2406,7 @@ sub parent_data {
 	my @parent_cachegroup_ids;
 	my @secondary_parent_cachegroup_ids;
 	my $org_cachegroup_type_id = &type_id( $self, "ORG_LOC" );
-	
+
 	# Top level caches (no parent caches defined)
 	if ( $is_top_level_cache == 1 ) {
 
@@ -2420,8 +2429,8 @@ sub parent_data {
 	my %deliveryservices;
 	my %parent_info;
 
-	$self->cachegroup_profiles( \@parent_cachegroup_ids,           \%profile_cache, \%deliveryservices );
-	$self->cachegroup_profiles( \@secondary_parent_cachegroup_ids, \%profile_cache, \%deliveryservices );
+	$self->cachegroup_profiles( $server_obj->cachegroup->id, \@parent_cachegroup_ids,           \%profile_cache, \%deliveryservices );
+	$self->cachegroup_profiles( $server_obj->cachegroup->id, \@secondary_parent_cachegroup_ids, \%profile_cache, \%deliveryservices );
 	foreach my $prefix ( keys %deliveryservices ) {
 		foreach my $row ( @{ $deliveryservices{$prefix} } ) {
 			my $pid              = $row->profile->id;
@@ -2686,16 +2695,105 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 			foreach my $ds ( sort @{ $data->{dslist} } ) {
 				my $text;
 				my $org = $ds->{org};
+				my $multi_site_origin = $ds->{multi_site_origin} || 0;
+
+				my $mso_algorithm                      = $ds->{'param'}->{'parent.config'}->{'mso.algorithm'} || 'consistent_hash';
+				my $parent_retry                       = $ds->{'param'}->{'parent.config'}->{'mso.parent_retry'} || 'both';
+				my $unavailable_server_retry_responses = $ds->{'param'}->{'parent.config'}->{'mso.unavailable_server_retry_responses'} || '';
+				my $max_simple_retries                 = $ds->{'param'}->{'parent.config'}->{'mso.max_simple_retries'} || 1;
+				my $max_unavailable_server_retries     = $ds->{'param'}->{'parent.config'}->{'mso.max_unavailable_server_retries'} || 1;
+
 				next if !defined $org || $org eq "";
 				next if $done{$org};
 				my $org_uri = URI->new($org);
+
 				if ( $ds->{type} eq "HTTP_NO_CACHE" || $ds->{type} eq "HTTP_LIVE" || $ds->{type} eq "DNS_LIVE" ) {
-					$text .= "dest_domain=" . $org_uri->host . " port=" . $org_uri->port . " go_direct=true\n";
+					my $ds_qsh = $qsh;
+					if (!defined($qsh)) {
+						$ds_qsh = $ds->{'param'}->{'parent.config'}->{'psel.qstring_handling'};
+					}
+					my $parent_qstring = defined($ds_qsh) ? $ds_qsh : "ignore";
+					if ( $ds->{qstring_ignore} == 0 && !defined($ds_qsh) ) {
+						$parent_qstring = "consider";
+					}
+
+					if ( $multi_site_origin ) {
+						my @ranked_parents = ();
+						if ( exists( $parent_info->{ $org_uri->host } ) ) {
+							@ranked_parents = sort by_parent_rank @{ $parent_info->{ $org_uri->host } };
+						}
+						else {
+							$self->app->log->warn( "BUG: Did not match a multi-site origin: " . $org_uri );
+						}
+
+						my @parent_info;
+						my @secondary_parent_info;
+						my @null_parent_info;
+						foreach my $parent (@ranked_parents) {
+							if ( $parent->{primary_parent} ) {
+								push @parent_info, format_parent_info($parent);
+							}
+							elsif ( $parent->{secondary_parent} ) {
+								push @secondary_parent_info, format_parent_info($parent);
+							}
+							else {
+								push @null_parent_info, format_parent_info($parent);
+							}
+						}
+
+						# If we don't find any parents in the primary parent, then use the secondary parents list as primary and clear the secondary list.
+						# Once we do that, null parent will be used in the secondary_parent category due to the join of the two arrays.
+						# This prevents blank parent entries.
+						if ( scalar @parent_info == 0  ) {
+							# If no parents are found in the secondary parent either, then set the null parent list (parents in neither secondary or primary)
+							# as the secondary parent list and clear the null parent list.
+							if ( scalar @secondary_parent_info == 0  ) {
+								@secondary_parent_info = @null_parent_info;
+								@null_parent_info = ();
+							}
+							@parent_info = @secondary_parent_info;
+							@secondary_parent_info = ();
+						}
+
+						my %seen;
+						@parent_info = grep { !$seen{$_}++ } @parent_info;
+
+						if ( scalar @secondary_parent_info > 0 ) {
+							my %seen;
+							@secondary_parent_info = grep { !$seen{$_}++ } @secondary_parent_info;
+						}
+						if ( scalar @null_parent_info > 0 ) {
+							my %seen;
+							@null_parent_info = grep { !$seen{$_}++ } @null_parent_info;
+						}
+						#If the ats version supports it and the algorithm is consistent hash, put secondary and non-primary parents into secondary parent group.
+						#This will ensure that secondary and tertiary parents will be unused unless all hosts in the primary group are unavailable.
+						my $parents= '';
+						if ( $ats_major_version >= 6 && $mso_algorithm eq "consistent_hash" && ( scalar @secondary_parent_info > 0 || scalar @null_parent_info > 0 ) ) {
+							$parents = 'parent="' . join( '', @parent_info ) . '" secondary_parent="' . join( '', @secondary_parent_info ) . '' . join( '', @null_parent_info ) . '"';
+						}
+						else {
+							$parents = 'parent="' . join( '', @parent_info ) . '' . join( '', @secondary_parent_info ) . '' . join( '', @null_parent_info ) . '"';
+						}
+
+						$text .= "dest_domain=" . $org_uri->host . " port=" . $org_uri->port . " $parents round_robin=$mso_algorithm qstring=$parent_qstring go_direct=false parent_is_proxy=false";
+						if ( $ats_major_version >= 6 && $parent_retry ne "" ) {
+							if ( $unavailable_server_retry_responses ne "" && $unavailable_server_retry_responses =~ /^"(?:\d{3},)+\d{3}"\s*$/) {
+								$text .= " parent_retry=$parent_retry unavailable_server_retry_responses=$unavailable_server_retry_responses";
+							} else {
+								$text .= " parent_retry=$parent_retry";
+							}
+							$text .= " max_simple_retries=$max_simple_retries max_unavailable_server_retries=$max_unavailable_server_retries";
+						}
+						$text .= "\n";
+					} else {
+						$text .= "dest_domain=" . $org_uri->host . " port=" . $org_uri->port . " go_direct=true\n";
+					}
 				}
 				else {
 					# check for profile psel.qstring_handling.  If this parameter is assigned to the server profile,
 					# then edges will use the qstring handling value specified in the parameter for all profiles.
-	
+
 					# If there is no defined parameter in the profile, then check the delivery service profile.
 					# If psel.qstring_handling exists in the DS profile, then we use that value for the specified DS only.
 					# This is used only if not overridden by a server profile qstring handling parameter.
@@ -2704,7 +2802,7 @@ sub parent_dot_config { #fix qstring - should be ignore for quika
 						$ds_qsh = $ds->{'param'}->{'parent.config'}->{'psel.qstring_handling'};
 					}
 					my $parent_qstring = defined($ds_qsh) ? $ds_qsh : "ignore";
-	
+
 					if ( $ds->{qstring_ignore} == 0 && !defined($ds_qsh) ) {
 						$parent_qstring = "consider";
 					}
