@@ -25,6 +25,6 @@ import (
 )
 
 func GetConfigFileProfileRecordsDotConfig(toData *config.TOData) (string, string, string, error) {
-	params := ParamsToMap(FilterParams(toData.ServerParams, atscfg.RecordsFileName, "", "", "location"))
+	params := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, atscfg.RecordsFileName, "", "", "location"))
 	return atscfg.MakeRecordsDotConfig(toData.Server.Profile, params, toData.TOToolName, toData.TOURL), atscfg.ContentTypeRecordsDotConfig, atscfg.LineCommentRecordsDotConfig, nil
 }

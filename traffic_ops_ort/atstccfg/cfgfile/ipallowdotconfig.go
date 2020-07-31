@@ -29,7 +29,7 @@ import (
 )
 
 func GetConfigFileServerIPAllowDotConfig(toData *config.TOData) (string, string, string, error) {
-	fileParams := ParamsToMultiMap(FilterParams(toData.ServerParams, atscfg.IPAllowConfigFileName, "", "", ""))
+	fileParams := atscfg.ParamsToMultiMap(atscfg.FilterParams(toData.ServerParams, atscfg.IPAllowConfigFileName, "", "", ""))
 
 	cgMap := map[string]tc.CacheGroupNullable{}
 	for _, cg := range toData.CacheGroups {

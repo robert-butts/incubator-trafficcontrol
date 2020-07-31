@@ -52,7 +52,7 @@ func GetConfigFileCDNHeaderRewriteMid(toData *config.TOData, fileName string) (s
 		return "", "", "", errors.New("converting ds to config ds: " + err.Error())
 	}
 
-	dsServers := FilterDSS(toData.DeliveryServiceServers, map[int]struct{}{cfgDS.ID: {}}, nil)
+	dsServers := atscfg.FilterDSS(toData.DeliveryServiceServers, map[int]struct{}{cfgDS.ID: {}}, nil)
 
 	dsServerIDs := map[int]struct{}{}
 	for _, dss := range dsServers {

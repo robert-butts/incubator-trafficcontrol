@@ -39,7 +39,7 @@ func GetConfigFileProfileUnknownConfig(toData *config.TOData, fileName string) (
 	if !inScope {
 		return `{"alerts":[{"level":"error","text":"Error - incorrect file scope for route used.  Please use the servers route."}]}`, "", "", config.ErrBadRequest
 	}
-	params := ParamsToMap(FilterParams(toData.ServerParams, fileName, "", "", "location"))
+	params := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, fileName, "", "", "location"))
 
 	commentType := atscfg.GetUnknownConfigCommentType(toData.Server.Profile, params, toData.TOToolName, toData.TOURL)
 	txt := atscfg.MakeUnknownConfig(toData.Server.Profile, params, toData.TOToolName, toData.TOURL)

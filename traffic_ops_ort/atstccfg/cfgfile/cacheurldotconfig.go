@@ -33,7 +33,7 @@ func GetConfigFileCDNCacheURL(toData *config.TOData, fileName string) (string, s
 		}
 	}
 
-	dss := FilterDSS(toData.DeliveryServiceServers, dsIDs, nil)
+	dss := atscfg.FilterDSS(toData.DeliveryServiceServers, dsIDs, nil)
 
 	dssMap := map[int][]int{} // map[dsID]serverID
 	for _, dss := range dss {

@@ -34,7 +34,7 @@ func GetConfigFileProfileCacheDotConfig(toData *config.TOData) (string, string, 
 		profileServerIDsMap[sv.ID] = struct{}{}
 	}
 
-	dsServers := FilterDSS(toData.DeliveryServiceServers, nil, profileServerIDsMap)
+	dsServers := atscfg.FilterDSS(toData.DeliveryServiceServers, nil, profileServerIDsMap)
 
 	dsIDs := map[int]struct{}{}
 	for _, dss := range dsServers {

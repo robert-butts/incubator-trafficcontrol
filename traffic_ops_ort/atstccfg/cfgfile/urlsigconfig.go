@@ -29,7 +29,7 @@ import (
 )
 
 func GetConfigFileProfileURLSigConfig(toData *config.TOData, fileName string) (string, string, string, error) {
-	paramData := ParamsToMap(FilterParams(toData.ServerParams, fileName, "", "", "location"))
+	paramData := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, fileName, "", "", "location"))
 
 	dsName := GetDSFromURLSigConfigFileName(fileName)
 	if dsName == "" {

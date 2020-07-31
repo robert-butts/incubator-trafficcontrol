@@ -26,7 +26,7 @@ import (
 )
 
 func GetConfigFileServerUnknownConfig(toData *config.TOData, fileName string) (string, string, string, error) {
-	params := ParamsToMultiMap(FilterParams(toData.ServerParams, fileName, "", "", ""))
+	params := atscfg.ParamsToMultiMap(atscfg.FilterParams(toData.ServerParams, fileName, "", "", ""))
 	lineComment := atscfg.GetServerUnknownConfigCommentType(tc.CacheName(toData.Server.HostName), toData.Server.DomainName, toData.TOToolName, toData.TOURL, params)
 	return atscfg.MakeServerUnknown(tc.CacheName(toData.Server.HostName), toData.Server.DomainName, toData.TOToolName, toData.TOURL, params), atscfg.ContentTypeServerUnknownConfig, lineComment, nil
 }

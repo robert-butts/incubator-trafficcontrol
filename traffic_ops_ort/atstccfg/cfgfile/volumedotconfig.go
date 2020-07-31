@@ -27,6 +27,6 @@ import (
 const VolumeFileName = StorageFileName
 
 func GetConfigFileProfileVolumeDotConfig(toData *config.TOData) (string, string, string, error) {
-	params := ParamsToMap(FilterParams(toData.ServerParams, VolumeFileName, "", "", ""))
+	params := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, VolumeFileName, "", "", ""))
 	return atscfg.MakeVolumeDotConfig(toData.Server.Profile, params, toData.TOToolName, toData.TOURL), atscfg.ContentTypeVolumeDotConfig, atscfg.LineCommentVolumeDotConfig, nil
 }

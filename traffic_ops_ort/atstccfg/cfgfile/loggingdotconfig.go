@@ -25,6 +25,6 @@ import (
 )
 
 func GetConfigFileProfileLoggingDotConfig(toData *config.TOData) (string, string, string, error) {
-	params := ParamsToMap(FilterParams(toData.ServerParams, atscfg.LoggingFileName, "", "", "location"))
+	params := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, atscfg.LoggingFileName, "", "", "location"))
 	return atscfg.MakeLoggingDotConfig(toData.Server.Profile, params, toData.TOToolName, toData.TOURL), atscfg.ContentTypeLoggingDotConfig, atscfg.LineCommentLoggingDotConfig, nil
 }

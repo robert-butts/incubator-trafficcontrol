@@ -32,7 +32,7 @@ const ServerHostingDotConfigMidIncludeInactive = false
 const ServerHostingDotConfigEdgeIncludeInactive = true
 
 func GetConfigFileServerHostingDotConfig(toData *config.TOData) (string, string, string, error) {
-	fileParams := ParamsToMap(FilterParams(toData.ServerParams, atscfg.HostingConfigParamConfigFile, "", "", ""))
+	fileParams := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, atscfg.HostingConfigParamConfigFile, "", "", ""))
 
 	cdnServers := map[tc.CacheName]tc.Server{}
 	for _, sv := range toData.Servers {
@@ -54,7 +54,7 @@ func GetConfigFileServerHostingDotConfig(toData *config.TOData) (string, string,
 		}
 	}
 
-	dsServers := FilterDSS(toData.DeliveryServiceServers, dsIDs, serverIDs)
+	dsServers := atscfg.FilterDSS(toData.DeliveryServiceServers, dsIDs, serverIDs)
 
 	dsServerMap := map[int]map[int]struct{}{} // set[dsID][serverID]
 	for _, dss := range dsServers {

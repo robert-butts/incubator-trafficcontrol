@@ -25,6 +25,6 @@ import (
 )
 
 func GetConfigFileProfilePluginDotConfig(toData *config.TOData) (string, string, string, error) {
-	params := ParamsToMap(FilterParams(toData.ServerParams, atscfg.PluginFileName, "", "", "location"))
+	params := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, atscfg.PluginFileName, "", "", "location"))
 	return atscfg.MakePluginDotConfig(toData.Server.Profile, params, toData.TOToolName, toData.TOURL), atscfg.ContentTypePluginDotConfig, atscfg.LineCommentPluginDotConfig, nil
 }

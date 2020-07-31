@@ -88,7 +88,6 @@ func GetConfigFileServerParentDotConfig(toData *config.TOData) (string, string, 
 		CacheGroupID:                  toData.Server.CachegroupID,
 		CDN:                           tc.CDNName(toData.Server.CDNName),
 		CDNID:                         toData.Server.CDNID,
-		DomainName:                    toData.Server.DomainName,
 		HostName:                      toData.Server.HostName,
 		ID:                            toData.Server.ID,
 		IP:                            toData.Server.IPAddress,
@@ -167,7 +166,7 @@ func GetConfigFileServerParentDotConfig(toData *config.TOData) (string, string, 
 	}
 	cgServerIDs[toData.Server.ID] = struct{}{}
 
-	cgDSServers := FilterDSS(toData.DeliveryServiceServers, nil, cgServerIDs)
+	cgDSServers := atscfg.FilterDSS(toData.DeliveryServiceServers, nil, cgServerIDs)
 
 	parentServerDSes := map[int]map[int]struct{}{} // map[serverID][dsID] // cgServerDSes
 	for _, dss := range cgDSServers {
@@ -197,7 +196,7 @@ func GetConfigFileServerParentDotConfig(toData *config.TOData) (string, string, 
 		return "", "", "", errors.New("getting ATS major version from version parameter (profile '" + toData.Server.Profile + "' configFile 'package' name 'trafficserver'): " + err.Error())
 	}
 
-	parentConfigParamsWithProfiles, err := TCParamsToParamsWithProfiles(toData.ParentConfigParams)
+	parentConfigParamsWithProfiles, err := atscfg.TCParamsToParamsWithProfiles(toData.ParentConfigParams)
 	if err != nil {
 		return "", "", "", errors.New("unmarshalling parent.config parameters profiles: " + err.Error())
 	}

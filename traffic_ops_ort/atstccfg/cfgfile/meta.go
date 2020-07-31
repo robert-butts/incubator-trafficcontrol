@@ -82,7 +82,6 @@ func GetMeta(toData *config.TOData, dir string) (*tc.ATSConfigMetaData, error) {
 		CacheGroupID:                  toData.Server.CachegroupID,
 		CDN:                           tc.CDNName(toData.Server.CDNName),
 		CDNID:                         toData.Server.CDNID,
-		DomainName:                    toData.Server.DomainName,
 		HostName:                      toData.Server.HostName,
 		ID:                            toData.Server.ID,
 		IP:                            toData.Server.IPAddress,
@@ -109,7 +108,7 @@ func GetMeta(toData *config.TOData, dir string) (*tc.ATSConfigMetaData, error) {
 		}
 	}
 
-	scopeParams := ParamsToMap(toData.ScopeParams)
+	scopeParams := atscfg.ParamsToMap(toData.ScopeParams)
 
 	locationParams := map[string]atscfg.ConfigProfileParams{}
 	for _, param := range toData.ServerParams {

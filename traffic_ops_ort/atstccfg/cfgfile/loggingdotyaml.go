@@ -25,6 +25,6 @@ import (
 )
 
 func GetConfigFileProfileLoggingDotYAML(toData *config.TOData) (string, string, string, error) {
-	params := ParamsToMap(FilterParams(toData.ServerParams, atscfg.LoggingYAMLFileName, "", "", "location"))
+	params := atscfg.ParamsToMap(atscfg.FilterParams(toData.ServerParams, atscfg.LoggingYAMLFileName, "", "", "location"))
 	return atscfg.MakeLoggingDotYAML(toData.Server.Profile, params, toData.TOToolName, toData.TOURL), atscfg.ContentTypeLoggingDotYAML, atscfg.LineCommentLoggingDotYAML, nil
 }

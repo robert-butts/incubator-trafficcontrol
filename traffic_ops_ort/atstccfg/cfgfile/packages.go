@@ -25,6 +25,6 @@ import (
 )
 
 func GetConfigFileServerPackages(toData *config.TOData) (string, string, string, error) {
-	params := ParamsToMultiMap(FilterParams(toData.ServerParams, atscfg.PackagesParamConfigFile, "", "", ""))
+	params := atscfg.ParamsToMultiMap(atscfg.FilterParams(toData.ServerParams, atscfg.PackagesParamConfigFile, "", "", ""))
 	return atscfg.MakePackages(params), atscfg.ContentTypePackages, atscfg.LineCommentPackages, nil
 }
