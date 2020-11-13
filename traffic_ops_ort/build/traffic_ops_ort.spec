@@ -52,6 +52,13 @@ got3cdir=src/github.com/apache/trafficcontrol/traffic_ops_ort/t3c
 	cp "$TC_DIR"/traffic_ops_ort/t3c/t3c .
 ) || { echo "Could not copy go program at $(pwd): $!"; exit 1; }
 
+# copy t3c-determine-restart binary
+got3cdir=src/github.com/apache/trafficcontrol/traffic_ops_ort/t3c-determine-restart
+( mkdir -p "$got3cdir" && \
+	cd "$got3cdir" && \
+	cp "$TC_DIR"/traffic_ops_ort/t3c-determine-restart/t3c-determine-restart .
+) || { echo "Could not copy go program at $(pwd): $!"; exit 1; }
+
 
 %install
 mkdir -p ${RPM_BUILD_ROOT}/opt/ort
@@ -69,6 +76,9 @@ cp -p "$src"/atstccfg/atstccfg ${RPM_BUILD_ROOT}/opt/ort
 t3csrc=src/github.com/apache/trafficcontrol/traffic_ops_ort/t3c
 cp -p "$t3csrc"/t3c ${RPM_BUILD_ROOT}/opt/ort
 
+t3csrc=src/github.com/apache/trafficcontrol/traffic_ops_ort/t3c-determine-restart
+cp -p "$t3csrc"/t3c-determine-restart ${RPM_BUILD_ROOT}/opt/ort
+
 %clean
 rm -rf ${RPM_BUILD_ROOT}
 
@@ -80,6 +90,7 @@ rm -rf ${RPM_BUILD_ROOT}
 /opt/ort/supermicro_udev_mapper.pl
 /opt/ort/atstccfg
 /opt/ort/t3c
+/opt/ort/t3c-determine-restart
 
 %config(noreplace) /etc/logrotate.d/atstccfg
 %config(noreplace) /var/log/ort/atstccfg.log

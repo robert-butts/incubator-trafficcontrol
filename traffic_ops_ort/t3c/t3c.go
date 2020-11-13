@@ -25,6 +25,7 @@ import (
 	"github.com/apache/trafficcontrol/traffic_ops_ort/t3c/config"
 	"github.com/apache/trafficcontrol/traffic_ops_ort/t3c/torequest"
 	"github.com/apache/trafficcontrol/traffic_ops_ort/t3c/util"
+	"github.com/apache/trafficcontrol/traffic_ops_ort/t3cutil"
 	"os"
 	"time"
 )
@@ -44,7 +45,7 @@ const (
 )
 
 func runSysctl(cfg config.Cfg) {
-	if cfg.RunMode == config.BadAss {
+	if cfg.RunMode == t3cutil.ModeBadAss {
 		_, rc, err := util.ExecCommand("/usr/sbin/sysctl", "-p")
 		if err != nil {
 			log.Errorln("sysctl -p failed")
@@ -77,7 +78,7 @@ func main() {
 	} else if !util.CleanTmpDir() {
 		os.Exit(GeneralFailure)
 	}
-	if cfg.RunMode != config.Report {
+	if cfg.RunMode != t3cutil.ModeReport {
 		if !lock.GetLock(config.TmpBase + "/to_ort.lock") {
 			os.Exit(AlreadyRunning)
 		}
@@ -94,7 +95,7 @@ func main() {
 
 	// if running in Revalidate mode, check to see if it's
 	// necessary to continue
-	if cfg.RunMode == config.Revalidate {
+	if cfg.RunMode == t3cutil.ModeRevalidate {
 		syncdsUpdate, err = trops.CheckRevalidateState(false)
 		if err != nil || syncdsUpdate == torequest.UpdateTropsNotNeeded {
 			if err != nil {
@@ -108,12 +109,12 @@ func main() {
 			log.Errorln(err)
 			os.Exit(SyncDSError)
 		}
-		if cfg.RunMode == config.SyncDS && syncdsUpdate == torequest.UpdateTropsNotNeeded {
+		if cfg.RunMode == t3cutil.ModeSyncDS && syncdsUpdate == torequest.UpdateTropsNotNeeded {
 			os.Exit(Success)
 		}
 	}
 
-	if cfg.RunMode == config.Revalidate {
+	if cfg.RunMode == t3cutil.ModeRevalidate {
 		log.Infoln("======== Revalidating, no package processing needed ========")
 	} else {
 		log.Infoln("======== Start processing packages  ========")
@@ -152,10 +153,8 @@ func main() {
 		}
 	}
 
-	// start trafficserver
-	result := trops.StartServices(&syncdsUpdate)
-	if !result {
-		log.Errorf("failed to start services.\n")
+	if err := trops.StartServices(&syncdsUpdate); err != nil {
+		log.Errorln("failed to start services: " + err.Error())
 		os.Exit(ServicesError)
 	}
 
@@ -182,7 +181,7 @@ func main() {
 	}
 
 	// update Traffic Ops
-	result, err = trops.UpdateTrafficOps(&syncdsUpdate)
+	result, err := trops.UpdateTrafficOps(&syncdsUpdate)
 	if err != nil {
 		log.Errorf("failed to update Traffic Ops: %s\n", err.Error())
 	} else if result {

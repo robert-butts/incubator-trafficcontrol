@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/traffic_ops_ort/t3c/config"
+	"github.com/apache/trafficcontrol/traffic_ops_ort/t3cutil"
 	"github.com/gofrs/flock"
 	"io/ioutil"
 	"math/rand"
@@ -328,16 +329,16 @@ func CheckUser(cfg config.Cfg) bool {
 	}
 
 	switch cfg.RunMode {
-	case config.BadAss:
+	case t3cutil.ModeBadAss:
 		fallthrough
-	case config.SyncDS:
+	case t3cutil.ModeSyncDS:
 		if userInfo.Username != "root" {
 			log.Errorf("Only the root user may run in BadAss, or SyncDS mode, current user: %s\n",
 				userInfo.Username)
 			result = false
 		}
 	default:
-		log.Infof("current mode: %s, run user: %s\n", cfg.RunMode, userInfo.Username)
+		log.Infof("current mode: %s, run user: %s\n", cfg.RunMode.String(), userInfo.Username)
 	}
 	return result
 }
@@ -384,7 +385,7 @@ func MkDir(name string, cfg config.Cfg) bool {
 		return true
 	}
 	if err != nil {
-		if cfg.RunMode != config.Report {
+		if cfg.RunMode != t3cutil.ModeReport {
 			if err != nil { // the path does not exist.
 				err = os.Mkdir(name, 0755)
 				if err != nil {
