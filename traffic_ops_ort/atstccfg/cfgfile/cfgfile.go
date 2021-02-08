@@ -35,7 +35,7 @@ import (
 
 const TrafficOpsProxyParameterName = `tm.rev_proxy.url`
 
-// GetTOData gets all the data from Traffic Ops needed to generate config.
+// GetTODataUpdateStatus gets all the data from Traffic Ops needed to generate config.
 // Returns the data, the addresses of all Traffic Ops' requested, and any error.
 func GetTOData(cfg config.TCCfg) (*config.TOData, []net.Addr, error) {
 	start := time.Now()
@@ -51,28 +51,7 @@ func GetTOData(cfg config.TCCfg) (*config.TOData, []net.Addr, error) {
 	toIPs.Store(toAddr, nil)
 	toData.GlobalParams = globalParams
 
-	if !cfg.DisableProxy {
-		toProxyURLStr := ""
-		for _, param := range globalParams {
-			if param.Name == TrafficOpsProxyParameterName {
-				toProxyURLStr = param.Value
-				break
-			}
-		}
-		if toProxyURLStr != "" {
-			realTOURL := cfg.TOClient.C.URL
-			cfg.TOClient.C.URL = toProxyURLStr
-			log.Infoln("using Traffic Ops proxy '" + toProxyURLStr + "'")
-			if _, _, err := cfg.TOClient.C.GetCDNs(); err != nil {
-				log.Warnln("Traffic Ops proxy '" + toProxyURLStr + "' failed to get CDNs, falling back to real Traffic Ops")
-				cfg.TOClient.C.URL = realTOURL
-			}
-		} else {
-			log.Infoln("Traffic Ops proxy enabled, but GLOBAL Parameter '" + TrafficOpsProxyParameterName + "' missing or empty, not using proxy")
-		}
-	} else {
-		log.Infoln("Traffic Ops proxy is disabled, not checking or using GLOBAL Parameter '" + TrafficOpsProxyParameterName)
-	}
+	setProxy(cfg, globalParams)
 
 	serversF := func() error {
 		defer func(start time.Time) { log.Infof("serversF took %v\n", time.Since(start)) }(time.Now())
@@ -362,6 +341,154 @@ func GetTOData(cfg config.TCCfg) (*config.TOData, []net.Addr, error) {
 	})
 
 	return toData, toIPArr, util.JoinErrs(errs)
+}
+
+// GetTODataUpdateStatus gets all the data from Traffic Ops needed to generate the update_status data.
+// Which is: GlobalParams, Server, Servers, DeliveryServices, DeliveryServiceServers, Topologies, Cachegroups.
+// Returns the data, the addresses of all Traffic Ops' requested, and any error.
+// TODO abstract data calls, deduplicate with GetTOData
+func GetTODataUpdateStatus(cfg config.TCCfg) (*config.TOData, []net.Addr, error) {
+	start := time.Now()
+	defer func() { log.Infof("GetTOData took %v\n", time.Since(start)) }()
+
+	toIPs := &sync.Map{} // each Traffic Ops request could get a different IP, so track them all
+	toData := &config.TOData{}
+
+	globalParams, toAddr, err := cfg.TOClient.GetGlobalParameters()
+	if err != nil {
+		return nil, nil, errors.New("getting global parameters: " + err.Error())
+	}
+	toIPs.Store(toAddr, nil)
+	toData.GlobalParams = globalParams
+
+	setProxy(cfg, globalParams)
+
+	serversF := func() error {
+		defer func(start time.Time) { log.Infof("serversF took %v\n", time.Since(start)) }(time.Now())
+		servers, toAddr, unsupported, err := cfg.TOClientNew.GetServers()
+		if err == nil && unsupported {
+			log.Warnln("Traffic Ops newer than ORT, falling back to previous API Servers!")
+			servers, toAddr, err = cfg.TOClient.GetServers()
+		}
+		if err != nil {
+			return errors.New("getting servers: " + err.Error())
+		}
+		toData.Servers = servers
+		toIPs.Store(toAddr, nil)
+
+		server := &atscfg.Server{}
+		for _, toServer := range servers {
+			if toServer.HostName != nil && *toServer.HostName == cfg.CacheHostName {
+				server = &toServer
+				break
+			}
+		}
+		if server.ID == nil {
+			return errors.New("server '" + cfg.CacheHostName + " not found in servers")
+		} else if server.CDNName == nil {
+			return errors.New("server '" + cfg.CacheHostName + " missing CDNName")
+		} else if server.CDNID == nil {
+			return errors.New("server '" + cfg.CacheHostName + " missing CDNID")
+		} else if server.Profile == nil {
+			return errors.New("server '" + cfg.CacheHostName + " missing Profile")
+		}
+
+		toData.Server = server
+
+		dsF := func() error {
+			defer func(start time.Time) { log.Infof("dsF took %v\n", time.Since(start)) }(time.Now())
+
+			dses, toAddr, unsupported, err := cfg.TOClientNew.GetCDNDeliveryServices(*server.CDNID)
+			if err == nil && unsupported {
+				log.Warnln("Traffic Ops newer than ORT, falling back to previous API Delivery Services!")
+				dses, toAddr, err = cfg.TOClient.GetCDNDeliveryServices(*server.CDNID)
+			}
+			if err != nil {
+				return errors.New("getting delivery services: " + err.Error())
+			}
+			toData.DeliveryServices = dses
+			toIPs.Store(toAddr, nil)
+			return nil
+		}
+
+		fs := []func() error{dsF}
+		return util.JoinErrs(runParallel(fs))
+	}
+
+	// TODO change to not get DSS if all DSes have Topologies. MSO doesn't apply, we only need DSS for internal parentage for update_status
+	dssF := func() error {
+		defer func(start time.Time) { log.Infof("dssF took %v\n", time.Since(start)) }(time.Now())
+		dss, toAddr, err := cfg.TOClient.GetDeliveryServiceServers(nil, nil)
+		if err != nil {
+			return errors.New("getting delivery service servers: " + err.Error())
+		}
+		toData.DeliveryServiceServers = dss
+		toIPs.Store(toAddr, nil)
+		return nil
+	}
+
+	cgF := func() error {
+		defer func(start time.Time) { log.Infof("cfF took %v\n", time.Since(start)) }(time.Now())
+		cacheGroups, toAddr, err := cfg.TOClient.GetCacheGroups()
+		if err != nil {
+			return errors.New("getting cachegroups: " + err.Error())
+		}
+		toData.CacheGroups = cacheGroups
+		toIPs.Store(toAddr, nil)
+		return nil
+	}
+
+	topologiesF := func() error {
+		defer func(start time.Time) { log.Infof("topologiesF took %v\n", time.Since(start)) }(time.Now())
+		topologies, toAddr, unsupported, err := cfg.TOClientNew.GetTopologies()
+		if err != nil {
+			return errors.New("getting topologies: " + err.Error())
+		}
+		if unsupported {
+			log.Warnln("Traffic Ops didn't support Topologies, topologies will be not be used for config generation!")
+			return nil
+		}
+		toIPs.Store(toAddr, nil)
+		toData.Topologies = topologies
+		return nil
+	}
+
+	fs := []func() error{dssF, serversF, cgF, topologiesF}
+	errs := runParallel(fs)
+
+	toIPArr := []net.Addr{}
+	toIPs.Range(func(key, val interface{}) bool {
+		toIPArr = append(toIPArr, key.(net.Addr))
+		return true
+	})
+
+	return toData, toIPArr, util.JoinErrs(errs)
+}
+
+// setProxy sets the proxy of the TOClient in the config, based on the Global Parameter TrafficOpsProxyParameterName.
+func setProxy(cfg config.TCCfg, globalParams []tc.Parameter) {
+	if !cfg.DisableProxy {
+		toProxyURLStr := ""
+		for _, param := range globalParams {
+			if param.Name == TrafficOpsProxyParameterName {
+				toProxyURLStr = param.Value
+				break
+			}
+		}
+		if toProxyURLStr != "" {
+			realTOURL := cfg.TOClient.C.URL
+			cfg.TOClient.C.URL = toProxyURLStr
+			log.Infoln("using Traffic Ops proxy '" + toProxyURLStr + "'")
+			if _, _, err := cfg.TOClient.C.GetCDNs(); err != nil {
+				log.Warnln("Traffic Ops proxy '" + toProxyURLStr + "' failed to get CDNs, falling back to real Traffic Ops")
+				cfg.TOClient.C.URL = realTOURL
+			}
+		} else {
+			log.Infoln("Traffic Ops proxy enabled, but GLOBAL Parameter '" + TrafficOpsProxyParameterName + "' missing or empty, not using proxy")
+		}
+	} else {
+		log.Infoln("Traffic Ops proxy is disabled, not checking or using GLOBAL Parameter '" + TrafficOpsProxyParameterName)
+	}
 }
 
 // runParallel runs all funcs in fs in parallel goroutines, and returns after all funcs have returned.

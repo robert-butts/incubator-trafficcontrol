@@ -34,6 +34,7 @@ import (
 	"github.com/apache/trafficcontrol/lib/go-atscfg"
 	"github.com/apache/trafficcontrol/lib/go-log"
 	"github.com/apache/trafficcontrol/lib/go-tc"
+	"github.com/apache/trafficcontrol/traffic_ops_ort/atstccfg/cfgfile"
 	"github.com/apache/trafficcontrol/traffic_ops_ort/atstccfg/config"
 	"github.com/apache/trafficcontrol/traffic_ops_ort/atstccfg/toreq"
 	"github.com/apache/trafficcontrol/traffic_ops_ort/atstccfg/toreqnew"
@@ -41,11 +42,12 @@ import (
 
 func GetDataFuncs() map[string]func(config.TCCfg, io.Writer) error {
 	return map[string]func(config.TCCfg, io.Writer) error{
-		`update-status`: WriteServerUpdateStatus,
-		`packages`:      WritePackages,
-		`chkconfig`:     WriteChkconfig,
-		`system-info`:   WriteSystemInfo,
-		`statuses`:      WriteStatuses,
+		`update-status`:      WriteServerUpdateStatus,
+		`update-status-calc`: WriteServerUpdateStatusCalculated,
+		`packages`:           WritePackages,
+		`chkconfig`:          WriteChkconfig,
+		`system-info`:        WriteSystemInfo,
+		`statuses`:           WriteStatuses,
 	}
 }
 
@@ -122,6 +124,94 @@ func WriteServerUpdateStatus(cfg config.TCCfg, output io.Writer) error {
 	if err != nil {
 		return errors.New("getting server update status: " + err.Error())
 	}
+	if err := json.NewEncoder(output).Encode(status); err != nil {
+		return errors.New("encoding server update status: " + err.Error())
+	}
+	return nil
+}
+
+// WriteUpdateStatusCalculated writes the Traffic Ops server update status to output.
+// Note this is identical to /api/1.x/servers/name/update_status except it omits the '[]' wrapper.
+//
+// This returns the same data as WriteServerUpdateStatus, but calculates from API data endpoints,
+// rather than calling the TO endpoint which does the calculation.
+func WriteServerUpdateStatusCalculated(cfg config.TCCfg, output io.Writer) error {
+	warnings := []string{}
+
+	// TODO only get necessary data.
+	toData, _, err := cfgfile.GetTODataUpdateStatus(cfg)
+	if err != nil {
+		log.Errorln("WriteServerUpdateStatusCalculated getting data from traffic ops: " + err.Error())
+		os.Exit(config.ExitCodeErrGeneric)
+	}
+
+	if toData.Server.HostName == nil {
+		log.Errorln("WriteServerUpdateStatusCalculated server hostname was nil")
+		os.Exit(config.ExitCodeErrGeneric)
+	} else if toData.Server.ID == nil {
+		log.Errorln("WriteServerUpdateStatusCalculated server id was nil")
+		os.Exit(config.ExitCodeErrGeneric)
+	} else if toData.Server.Status == nil {
+		log.Errorln("WriteServerUpdateStatusCalculated server status was nil")
+		os.Exit(config.ExitCodeErrGeneric)
+	} else if toData.Server.UpdPending == nil {
+		log.Errorln("WriteServerUpdateStatusCalculated server updPending was nil")
+		os.Exit(config.ExitCodeErrGeneric)
+	} else if toData.Server.RevalPending == nil {
+		log.Errorln("WriteServerUpdateStatusCalculated server revalPending was nil")
+		os.Exit(config.ExitCodeErrGeneric)
+	}
+
+	// TODO check Capabilities, exclude parents without the necessary capabilities?
+
+	parents, parentWarns, err := atscfg.GetParents(
+		toData.Server,
+		toData.Servers,
+		toData.DeliveryServices,
+		toData.DeliveryServiceServers,
+		toData.CacheGroups,
+		toData.Topologies,
+	)
+	warnings = append(warnings, parentWarns...)
+
+	parentPending := false
+	parentRevalPending := false
+	for _, parent := range parents {
+		if parent.UpdPending == nil {
+			warnings = append(warnings, "parent had nil updPending, skipping!")
+		} else {
+			parentPending = parentPending || *parent.UpdPending
+		}
+		if parent.RevalPending == nil {
+			warnings = append(warnings, "parent had nil revalPending, skipping!")
+		} else {
+			parentRevalPending = parentRevalPending || *parent.RevalPending
+		}
+		if parentPending && parentRevalPending {
+			break
+		}
+	}
+
+	// TODO avoid getting all data, if server UpdPending and RevalPending are false.
+	// If this server isn't pending, nothing will be done, so there's no reason to
+	// fetch everything to figure out if the parent is pending.
+
+	// GlobalParams []tc.Parameter
+
+	useRevalParams := cfgfile.FilterParams(toData.GlobalParams, string(tc.GlobalConfigFileName), string(tc.UseRevalPendingParameterName), "", "")
+	useRevalPending := len(useRevalParams) > 0 && useRevalParams[0].Value != "" && useRevalParams[0].Value != "0"
+
+	status := tc.ServerUpdateStatus{
+		HostName:           *toData.Server.HostName,
+		UpdatePending:      *toData.Server.UpdPending,
+		RevalPending:       *toData.Server.RevalPending,
+		UseRevalPending:    useRevalPending,
+		HostId:             *toData.Server.ID,
+		Status:             *toData.Server.Status,
+		ParentPending:      parentPending,
+		ParentRevalPending: parentRevalPending,
+	}
+
 	if err := json.NewEncoder(output).Encode(status); err != nil {
 		return errors.New("encoding server update status: " + err.Error())
 	}

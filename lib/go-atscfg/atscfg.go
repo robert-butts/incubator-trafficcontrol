@@ -647,3 +647,202 @@ func makeErr(warnings []string, err string) error {
 func makeErrf(warnings []string, format string, v ...interface{}) error {
 	return makeErr(warnings, fmt.Sprintf(format, v...))
 }
+
+// GetParents returns all the servers which are parents of the given server.
+// This includes both the old Cachegroup Delivery Service Server assignments,
+// as well as the newer Topologies.
+//
+// It specifically checks Delivery Services, and omits parents which are CacheGroup parents but
+// have no DSS assignments, and Topology parents for which no Delivery Service has that Topology.
+//
+// Returns the found servers, any warnings, and any error.
+//
+func GetParents(
+	server *Server,
+	servers []Server,
+	deliveryServices []DeliveryService,
+	deliveryServiceServers []tc.DeliveryServiceServer,
+	cacheGroups []tc.CacheGroupNullable,
+	topologies []tc.Topology,
+) ([]Server, []string, error) {
+	warnings := []string{}
+	if server.ID == nil {
+		return nil, warnings, makeErr(warnings, "server missing ID")
+	}
+
+	servers, svWarns, err := filterServersCDN(server, servers)
+	warnings = append(warnings, svWarns...)
+	if err != nil {
+		return nil, nil, makeErr(warnings, "filtering cdn servers: "+err.Error())
+	}
+
+	hasDSS := false
+	for _, dss := range deliveryServiceServers {
+		if dss.Server == nil {
+			warnings = append(warnings, "deliveryServiceServers had entry with nil server, skipping!")
+			continue
+		}
+		if *dss.Server == *server.ID {
+			hasDSS = true
+			break
+		}
+	}
+
+	parents := []Server{}
+	if hasDSS {
+		cgParents, cgWarns, err := getServerCacheGroupParents(server, servers, cacheGroups)
+		warnings = append(warnings, cgWarns...)
+		if err != nil {
+			return nil, nil, makeErr(warnings, "getting cachegroup parents: "+err.Error())
+		}
+		parents = append(parents, cgParents...)
+	}
+
+	dsTopologies := map[string]struct{}{}
+	for _, ds := range deliveryServices {
+		if ds.Topology != nil && *ds.Topology != "" {
+			dsTopologies[*ds.Topology] = struct{}{}
+		}
+	}
+	if len(dsTopologies) > 0 {
+		tpParents, tpWarns, err := getServerTopologyParents(server, servers, dsTopologies, topologies)
+		warnings = append(warnings, tpWarns...)
+		if err != nil {
+			return nil, nil, makeErr(warnings, "getting topology parents: "+err.Error())
+		}
+		parents = append(parents, tpParents...)
+	}
+	return parents, warnings, nil
+}
+
+// filterServersCDN returns the servers which have the same CDN as server.
+func filterServersCDN(server *Server, servers []Server) ([]Server, []string, error) {
+	warnings := []string{}
+	if server.CDNName == nil {
+		return nil, nil, makeErr(warnings, "server CDN missing")
+	}
+	cdnServers := []Server{}
+	for _, cdnServer := range servers {
+		if cdnServer.CDNName == nil {
+			warnings = append(warnings, "servers had server with nil cdn, skipping!")
+			continue
+		}
+		if *cdnServer.CDNName != *server.CDNName {
+			continue
+		}
+		cdnServers = append(cdnServers, cdnServer)
+	}
+	return cdnServers, warnings, nil
+}
+
+// getCacheGroupParents returns the CacheGroup parents of the given Server.
+// Does NOT return Topology parents.
+func getServerCacheGroupParents(
+	server *Server,
+	servers []Server,
+	cacheGroups []tc.CacheGroupNullable,
+) ([]Server, []string, error) {
+	warnings := []string{}
+	if server.Cachegroup == nil {
+		return nil, nil, makeErr(warnings, "server CacheGroup missing")
+	}
+	cgMap, err := makeCGMap(cacheGroups) // (map[tc.CacheGroupName]tc.CacheGroupNullable, error) {
+	if err != nil {
+		return nil, nil, makeErr(warnings, "making CacheGroup map: "+err.Error())
+	}
+	cg, ok := cgMap[tc.CacheGroupName(*server.Cachegroup)]
+	if !ok {
+		return nil, nil, makeErr(warnings, "CacheGroups missing server CacheGroup '"+*server.Cachegroup+"'")
+	}
+
+	parentCGNames := []string{}
+	if cg.ParentName != nil {
+		parentCGNames = append(parentCGNames, *cg.ParentName)
+	}
+	if cg.SecondaryParentName != nil {
+		parentCGNames = append(parentCGNames, *cg.SecondaryParentName)
+	}
+
+	parents := []Server{}
+	if len(parentCGNames) == 0 {
+		// short-circuit. Don't iterate over every server, if there are no parents.
+		return parents, warnings, nil
+	}
+	for _, potentialParentServer := range servers {
+		if potentialParentServer.ID == nil {
+			warnings = append(warnings, "server in servers had no ID, skipping!")
+			continue
+		}
+		if potentialParentServer.Cachegroup == nil {
+			warnings = append(warnings, "server in servers had no CacheGroup, skipping!")
+			continue
+		}
+		for _, parentCGName := range parentCGNames {
+			if *potentialParentServer.Cachegroup == parentCGName {
+				parents = append(parents, potentialParentServer)
+				break
+			}
+		}
+	}
+	return parents, warnings, nil
+}
+
+func getServerTopologyParents(
+	server *Server,
+	servers []Server,
+	dsTopologies map[string]struct{},
+	topologies []tc.Topology,
+) ([]Server, []string, error) {
+	warnings := []string{}
+	if server.Cachegroup == nil {
+		return nil, nil, makeErr(warnings, "server CacheGroup missing")
+	}
+
+	parentCGs := map[string]struct{}{}
+	for _, topo := range topologies {
+		if _, ok := dsTopologies[topo.Name]; !ok {
+			continue
+		}
+		parentNodeIndexes := []int{}
+		for _, tpNode := range topo.Nodes {
+			if tpNode.Cachegroup != *server.Cachegroup {
+				continue
+			}
+			parentNodeIndexes = append(parentNodeIndexes, tpNode.Parents...)
+		}
+
+		for _, parentNodeI := range parentNodeIndexes {
+			if parentNodeI < 0 || parentNodeI >= len(topo.Nodes) {
+				warnings = append(warnings, "Topology '"+topo.Name+"' malformed, had invalid parent index "+strconv.Itoa(parentNodeI)+" - skipping!")
+				continue
+			}
+			parentNode := topo.Nodes[parentNodeI]
+			parentCGs[parentNode.Cachegroup] = struct{}{}
+		}
+	}
+
+	parents := []Server{}
+	for _, sv := range servers {
+		if sv.Cachegroup == nil {
+			warnings = append(warnings, "servers had server with no cachegroup, skipping!")
+			continue
+		} else if sv.Status == nil {
+			warnings = append(warnings, "servers had server with no status, skipping!")
+			continue
+		}
+
+		// Include ADMIN_DOWN - down parents are still considered. Down means it was brought down temporarily, but ORT should still be running, and the server will be brought up shortly.
+		// OFFLINE means the phsyical server is offline, and Ops will get the full new config before setting it REPORTED.
+		// If we didn't include ADMIN_DOWN here, the parent might be set REPORTED before an ORT run, causing inconsistencies.
+		// For example, a missing reval will cause the child to get the parent's cache before it invalidates, nullifying the invalidation.
+		// Or, a missing service will cause the child to request from the parent when it doesn't exist and get a502.
+		if tc.CacheStatus(*sv.Status) != tc.CacheStatusOnline && tc.CacheStatus(*sv.Status) != tc.CacheStatusReported && tc.CacheStatus(*sv.Status) != tc.CacheStatusAdminDown {
+			continue
+		}
+		if _, ok := parentCGs[*sv.Cachegroup]; !ok {
+			continue
+		}
+		parents = append(parents, sv)
+	}
+	return parents, warnings, nil
+}
